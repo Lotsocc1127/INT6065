@@ -84,7 +84,7 @@ function DashboardInner() {
       students: data.students.map((s) => s.name),
       kps: data.kps.map((k) => `${k.code} ${k.name}`),
       data: data.students.flatMap((s, si) =>
-        data.kps.map((k, ki) => [si, ki, s.values[k.id] ?? 0] as [number, number, number])
+        data.kps.map((k, ki) => [ki, si, s.values[k.id] ?? 0] as [number, number, number])
       ),
     });
   }, [data]);

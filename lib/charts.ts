@@ -100,7 +100,7 @@ export function chartTheme(): ChartTheme {
 export function heatmapOption(opts: {
   students: string[];
   kps: string[];
-  data: [number, number, number][]; // [studentIdx, kpIdx, value]
+  data: [number, number, number][]; // [kpIdx, studentIdx, value]（x 轴=知识点，y 轴=学生）
 }) {
   const t = chartTheme();
   return {
@@ -109,7 +109,7 @@ export function heatmapOption(opts: {
     tooltip: {
       formatter: (p: { data: [number, number, number] }) => {
         const v = p.data[2];
-        return `${opts.students[p.data[0]]}<br/>${opts.kps[p.data[1]]}：${Math.round(v * 100)}%`;
+        return `${opts.students[p.data[1]]}<br/>${opts.kps[p.data[0]]}：${Math.round(v * 100)}%`;
       },
       backgroundColor: t.surface,
       borderColor: t.grid,
