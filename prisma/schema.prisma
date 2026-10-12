@@ -7,8 +7,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")   // 运行时连接（Neon Pooled）
+  directUrl = env("DIRECT_URL")     // 建表/种子用（Neon Direct，CLI 自动使用）
 }
 
 enum Role {
