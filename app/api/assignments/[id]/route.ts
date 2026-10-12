@@ -4,6 +4,8 @@ import { requireApiUser } from "@/lib/auth";
 import { parseArr } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+
 /** GET /api/assignments/:id —— 作业详情
  * 教师：全部提交与批改；学生：题目（提交后可见答案/解析）+ 自己的批改结果 */
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {

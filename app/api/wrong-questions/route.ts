@@ -4,6 +4,8 @@ import { requireApiUser } from "@/lib/auth";
 import { parseArr } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+
 /** GET /api/wrong-questions?subject= —— 错题本（含归因与最近一次作答） */
 export async function GET(req: NextRequest) {
   try {

@@ -4,6 +4,8 @@ import { requireApiUser } from "@/lib/auth";
 import { parseArr } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+
 /** GET /api/subjects/:code/knowledge-points —— 知识图谱（含前置依赖） */
 export async function GET(_req: NextRequest, { params }: { params: { code: string } }) {
   try {

@@ -4,6 +4,8 @@ import { requireApiUser } from "@/lib/auth";
 import { avg } from "@/lib/mastery";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+
 /** GET /api/students/:id —— 学生详情（教师端）：掌握度、历史、目标、错题与作答统计 */
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   try {

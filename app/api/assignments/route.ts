@@ -5,6 +5,8 @@ import { requireApiUser } from "@/lib/auth";
 import { toArrStr } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+
 const TYPES: string[] = Object.values(QuestionType);
 
 interface GeneratedQuestion {

@@ -5,6 +5,8 @@ import { parseArr } from "@/lib/json";
 import { buildPath } from "@/lib/mastery";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+
 /** GET /api/student/path?subject= —— 个性化学习路径（拓扑补前置，6.4） */
 export async function GET(req: NextRequest) {
   try {

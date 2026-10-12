@@ -4,6 +4,8 @@ import { requireApiUser } from "@/lib/auth";
 import { gradeAnswer } from "@/lib/grading";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+
 /** POST /api/ai/grade —— 单题批改（教师手动批改入口）：{questionId, response} */
 export async function POST(req: NextRequest) {
   try {

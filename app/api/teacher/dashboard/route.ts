@@ -5,6 +5,8 @@ import { requireApiUser } from "@/lib/auth";
 import { avg, tierOf, type Tier } from "@/lib/mastery";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+
 /** GET /api/teacher/dashboard?subject=&classId= —— 班级看板：聚合掌握度、热力图矩阵、分层诊断 */
 export async function GET(req: NextRequest) {
   try {

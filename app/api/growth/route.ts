@@ -4,6 +4,8 @@ import { requireApiUser } from "@/lib/auth";
 import { avg } from "@/lib/mastery";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+
 /** GET /api/growth?subject= —— 成长档案：统计、掌握度趋势、徽章 */
 export async function GET(req: NextRequest) {
   try {

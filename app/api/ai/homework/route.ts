@@ -6,6 +6,8 @@ import { homeworkPrompt } from "@/lib/prompts";
 import { prisma } from "@/lib/prisma";
 import type { Tier } from "@/lib/mastery";
 
+export const dynamic = "force-dynamic";
+
 /** POST /api/ai/homework —— AI 分层作业生成（7.2）：{subjectCode, kpCodes?, tier, count} */
 export async function POST(req: NextRequest) {
   try {

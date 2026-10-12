@@ -5,6 +5,8 @@ import { llmChat } from "@/lib/llm";
 import { socratesSystem } from "@/lib/prompts";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+
 /** POST /api/ai/socrates —— 苏格拉底式辅导（7.6，绝不直接给答案）
  * {messages: [{role: "user"|"assistant", content}], questionId?} */
 export async function POST(req: NextRequest) {

@@ -3,6 +3,8 @@ import { fail, ok } from "@/lib/api";
 import { requireApiUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+
 /** GET /api/goals —— 我的目标；POST —— 设定新目标 */
 export async function GET() {
   try {

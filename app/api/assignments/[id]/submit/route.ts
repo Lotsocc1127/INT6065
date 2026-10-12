@@ -3,6 +3,8 @@ import { fail, ok } from "@/lib/api";
 import { requireApiUser } from "@/lib/auth";
 import { processSubmission } from "@/lib/grading";
 
+export const dynamic = "force-dynamic";
+
 /** POST /api/assignments/:id/submit —— 提交作答 → 批改 → 掌握度更新 → 错题归集 */
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   try {

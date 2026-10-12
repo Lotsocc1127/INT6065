@@ -3,6 +3,8 @@ import { fail, ok } from "@/lib/api";
 import { requireApiUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+
 /** PATCH /api/wrong-questions/:id —— 标记已掌握/未掌握 */
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   try {

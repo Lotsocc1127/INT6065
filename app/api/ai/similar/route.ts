@@ -6,6 +6,8 @@ import { llmJson } from "@/lib/llm";
 import { SIMILAR_SYSTEM } from "@/lib/prompts";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+
 /** POST /api/ai/similar —— AI 举一反三（7.5）：{questionId}，生成 3 道同知识点递进练习 */
 export async function POST(req: NextRequest) {
   try {

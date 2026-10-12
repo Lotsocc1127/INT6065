@@ -5,6 +5,8 @@ import { llmJson } from "@/lib/llm";
 import { suggestPrompt } from "@/lib/prompts";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+
 /** POST /api/ai/suggest —— AI 培养建议（7.4）：{studentId, subjectCode} */
 export async function POST(req: NextRequest) {
   try {

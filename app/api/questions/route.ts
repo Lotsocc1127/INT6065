@@ -5,6 +5,8 @@ import { requireApiUser } from "@/lib/auth";
 import { parseArr } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+
 /** GET /api/questions?subject=&kp=&difficulty=&type=&q= —— 题库浏览（教师端，含答案） */
 export async function GET(req: NextRequest) {
   try {
