@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---- UI 主题（shadcn 变量） ---- */
+:root {
+  --background: 0 0% 100%;
+  --foreground: 240 10% 3.9%;
+  --card: 0 0% 100%;
+  --card-foreground: 240 10% 3.9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 10% 3.9%;
+  --primary: 240 5.9% 10%;
+  --primary-foreground: 0 0% 98%;
+  --secondary: 240 4.8% 95.9%;
+  --secondary-foreground: 240 5.9% 10%;
+  --muted: 240 4.8% 95.9%;
+  --muted-foreground: 240 3.8% 46.1%;
+  --accent: 240 4.8% 95.9%;
+  --accent-foreground: 240 5.9% 10%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 240 5.9% 90%;
+  --input: 240 5.9% 90%;
+  --ring: 240 10% 3.9%;
+  --radius: 0.5rem;
+}
+
+body {
+  color: hsl(var(--foreground));
+  background: hsl(var(--background));
+  font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+}
+
+/* ---- 图表主题变量（dataviz 参考调色板，浅色/深色两套均已校验） ---- */
+:root {
+  --chart-surface: #fcfcfb;
+  --chart-ink: #0b0b0b;
+  --chart-ink2: #52514e;
+  --chart-muted: #898781;
+  --chart-grid: #e1e0d9;
+  --chart-axis: #c3c2b7;
+  --chart-s1: #2a78d6;
+  --chart-s2: #eb6834;
+  --chart-s3: #1baf7a;
+  --chart-s4: #eda100;
+  --chart-seq100: #cde2fb;
+  --chart-seq200: #9ec5f4;
+  --chart-seq300: #6da7ec;
+  --chart-seq400: #3987e5;
+  --chart-seq500: #2a78d6;
+  --chart-seq600: #1c5cab;
+  --chart-seq700: #104281;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --chart-surface: #1a1a19;
+    --chart-ink: #ffffff;
+    --chart-ink2: #c3c2b7;
+    --chart-muted: #898781;
+    --chart-grid: #2c2c2a;
+    --chart-axis: #383835;
+    --chart-s1: #3987e5;
+    --chart-s2: #d95926;
+    --chart-s3: #199e70;
+    --chart-s4: #c98500;
+    --chart-seq100: #104281;
+    --chart-seq200: #184f95;
+    --chart-seq300: #1c5cab;
+    --chart-seq400: #2a78d6;
+    --chart-seq500: #3987e5;
+    --chart-seq600: #6da7ec;
+    --chart-seq700: #cde2fb;
+  }
+}

@@ -1,0 +1,189 @@
+// AI 学生成长系统 · 数据模型
+// 依据《开发文档》第 5 节。数组字段以 JSON 字符串存储（兼容 SQLite 与 PostgreSQL）。
+// 部署目标为 Vercel + Neon（PostgreSQL）；本地开发同样使用 PostgreSQL（见 README）。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  TEACHER
+  STUDENT
+  PARENT
+  ADMIN
+}
+
+enum QuestionType {
+  SINGLE_CHOICE
+  FILL_BLANK
+  OPEN_RESPONSE
+}
+
+enum AssignmentType {
+  HOMEWORK
+  QUIZ
+}
+
+model User {
+  id        String  @id @default(cuid())
+  name      String
+  role      Role
+  // bcrypt 哈希（种子脚本用 bcryptjs 生成；生产环境必须为哈希）
+  password  String
+  classId   String?
+  class     Class?  @relation(fields: [classId], references: [id])
+  answers       AnswerRecord[]
+  masteries     Mastery[]
+  goals         LearningGoal[]
+  submissions   Submission[]
+}
+
+model Class {
+  id          String @id @default(cuid())
+  name        String // 例如 "七年级(3)班"
+  students    User[]
+  assignments Assignment[]
+}
+
+model Subject {
+  id              String @id @default(cuid())
+  code            String @unique // math / english
+  name            String
+  knowledgePoints KnowledgePoint[]
+  questions       Question[]
+  assignments     Assignment[]
+}
+
+model KnowledgePoint {
+  id          String   @id @default(cuid())
+  subjectId   String
+  code        String // K1 / K2 ...
+  name        String
+  description String?
+  prereqIds   String   @default("[]") // 前置知识点 id 列表（JSON）
+  subject     Subject  @relation(fields: [subjectId], references: [id])
+  masteries   Mastery[]
+}
+
+model Question {
+  id          String       @id @default(cuid())
+  subjectId   String
+  kpIds       String       @default("[]") // 关联知识点 id（JSON）
+  type        QuestionType
+  difficulty  Int // 1-5
+  stem        String // 题干
+  options     String? // JSON 字符串（选择题）
+  answer      String // 标准答案
+  analysis    String? // 解析
+  subject     Subject      @relation(fields: [subjectId], references: [id])
+  assignmentQuestions AssignmentQuestion[]
+  answerRecords AnswerRecord[]
+  wrongQuestions WrongQuestion[]
+}
+
+model Assignment {
+  id         String         @id @default(cuid())
+  subjectId  String
+  classId    String
+  type       AssignmentType
+  title      String
+  difficulty Int?
+  dueAt      DateTime?
+  createdAt  DateTime       @default(now())
+  subject    Subject        @relation(fields: [subjectId], references: [id])
+  class      Class          @relation(fields: [classId], references: [id])
+  questions  AssignmentQuestion[]
+  submissions Submission[]
+}
+
+model AssignmentQuestion {
+  id           String     @id @default(cuid())
+  assignmentId String
+  questionId   String
+  order        Int
+  question     Question   @relation(fields: [questionId], references: [id])
+  assignment   Assignment @relation(fields: [assignmentId], references: [id])
+
+  @@unique([assignmentId, questionId])
+}
+
+model Submission {
+  id           String   @id @default(cuid())
+  assignmentId String
+  studentId    String
+  submittedAt  DateTime @default(now())
+  student      User     @relation(fields: [studentId], references: [id])
+  answers      AnswerRecord[]
+  assignment   Assignment @relation(fields: [assignmentId], references: [id])
+
+  @@unique([assignmentId, studentId])
+}
+
+model AnswerRecord {
+  id             String    @id @default(cuid())
+  submissionId   String
+  questionId     String
+  kpIds          String    @default("[]") // 快照：作答时的知识点关联
+  studentId      String
+  student        User      @relation(fields: [studentId], references: [id])
+  question       Question  @relation(fields: [questionId], references: [id])
+  response       String // 学生作答
+  isCorrect      Boolean? // 客观题判对错；解答题由 AI 批改
+  score          Float? // 0-1
+  timeSpentMs    Int?
+  errorTags      String    @default("[]") // 错误类型标签（JSON）
+  errorAnalysis  String? // 错误归因
+  improvement    String? // 改进建议
+  submission     Submission @relation(fields: [submissionId], references: [id])
+}
+
+model Mastery {
+  id        String   @id @default(cuid())
+  studentId String
+  kpId      String
+  subjectId String
+  student   User           @relation(fields: [studentId], references: [id])
+  kp        KnowledgePoint @relation(fields: [kpId], references: [id])
+  value     Float // 0-1
+  updatedAt DateTime @updatedAt
+  history   MasteryPoint[]
+
+  @@unique([studentId, kpId])
+}
+
+model MasteryPoint {
+  id        String   @id @default(cuid())
+  masteryId String
+  value     Float
+  at        DateTime @default(now())
+  mastery   Mastery  @relation(fields: [masteryId], references: [id])
+}
+
+model WrongQuestion {
+  id          String   @id @default(cuid())
+  studentId   String
+  questionId  String
+  question    Question @relation(fields: [questionId], references: [id])
+  kpIds       String   @default("[]")
+  wrongCount  Int      @default(1)
+  mastered    Boolean  @default(false)
+  lastWrongAt DateTime @default(now())
+
+  @@unique([studentId, questionId])
+}
+
+model LearningGoal {
+  id         String   @id @default(cuid())
+  studentId  String
+  content    String
+  kpId       String?
+  done       Boolean  @default(false)
+  challenged Boolean  @default(false) // 学生对标签提出异议
+  createdAt  DateTime @default(now())
+  student    User     @relation(fields: [studentId], references: [id])
+}
