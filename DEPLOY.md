@@ -25,7 +25,7 @@ npx prisma db seed
 ### 3. 部署到 Vercel（免费）
 
 1. [vercel.com](https://vercel.com) → Sign Up（推荐 GitHub 账号）
-2. Add New → Project → Import 选择 `lotsocc1127/INT6065` → Deploy
+2. Add New → Project → Import 选择 `lotsocc1127/INT6065` → Deploy（实际部署域名以 Vercel 分配为准，本项目为 `int-6065.vercel.app`）
    （首次部署会因缺环境变量失败，没关系，继续下一步）
 3. Project → Settings → Environment Variables 添加：
 
@@ -37,7 +37,7 @@ npx prisma db seed
 | `DEEPSEEK_API_KEY` | 你的 Key |
 
 4. Redeploy（Deployments → 最新一次 → Redeploy）
-5. 打开 https://**int6065.vercel.app** 即为线上版（免费域名 = Vercel 项目名，与仓库名一致）
+5. 打开 https://**int-6065.vercel.app** 即为线上版（免费域名 = Vercel 项目名，与仓库名可能不一致）
 
 > 首次部署自动跑 `prisma generate`（Vercel 检测到 Prisma 自动执行），无需改构建命令。
 > 正式绑定自有域名：Settings → Domains → 添加（可配合 Cloudflare 提升国内访问）。
