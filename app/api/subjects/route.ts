@@ -12,6 +12,10 @@ export async function GET() {
       orderBy: { code: "asc" },
       include: { _count: { select: { knowledgePoints: true, questions: true } } },
     });
+    // 数学先行（与看板/学生端默认科目一致），其余按 code 排序
+    subjects.sort((a, b) =>
+      a.code === "math" ? -1 : b.code === "math" ? 1 : a.code.localeCompare(b.code)
+    );
     return ok(
       subjects.map((s) => ({
         id: s.id,

@@ -111,11 +111,16 @@ export default function NewAssignmentPage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
+    // 支持从看板带科目跳转（?subject=english），否则默认第一个科目（数学）
+    const urlSubject = new URLSearchParams(window.location.search).get("subject");
     fetch("/api/subjects")
       .then((r) => r.json())
       .then((s) => {
-        if (Array.isArray(s) && s.length) setSubject(s[0].code);
-        setSubjects(Array.isArray(s) ? s : []);
+        const list: SubjectInfo[] = Array.isArray(s) ? s : [];
+        setSubjects(list);
+        const preferred =
+          urlSubject && list.some((x) => x.code === urlSubject) ? urlSubject : list[0]?.code;
+        if (preferred) setSubject(preferred);
       })
       .catch(() => {});
     fetch("/api/classes")
@@ -168,6 +173,15 @@ export default function NewAssignmentPage() {
       return next;
     });
   };
+
+  function changeSubject(code: string) {
+    setSubject(code);
+    // 已选题 / AI 结果属于旧科目，切换科目后清空
+    setSelected(new Map());
+    setGenerated([]);
+    setAiKps([]);
+    setAiResult(null);
+  }
 
   async function generateAi() {
     setAiLoading(true);
@@ -238,8 +252,8 @@ export default function NewAssignmentPage() {
           <CardTitle>布置作业</CardTitle>
           <CardDescription>从题库选题，或使用 AI 按分层生成作业（生成后可在下方编辑，教师最终把关）</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-4">
-          <div className="space-y-2">
+        <CardContent className="grid gap-4 md:grid-cols-6">
+          <div className="space-y-2 md:col-span-2">
             <Label htmlFor="title">作业标题 *</Label>
             <Input
               id="title"
@@ -247,6 +261,21 @@ export default function NewAssignmentPage() {
               onChange={(e) => setTitle(e.target.value)}
               placeholder="如：一元一次方程 · 第 2 周作业"
             />
+          </div>
+          <div className="space-y-2">
+            <Label>科目</Label>
+            <Select value={subject} onValueChange={changeSubject}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {subjects.map((s) => (
+                  <SelectItem key={s.code} value={s.code}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-2">
             <Label>类型</Label>
@@ -485,7 +514,8 @@ export default function NewAssignmentPage() {
               AI 分层作业生成
             </DialogTitle>
             <DialogDescription>
-              按知识点与难度层级生成题目。生成后请逐题审校（教师最终决策权），再采纳。
+              当前科目：{subjects.find((s) => s.code === subject)?.name ?? subject}
+              。按知识点与难度层级生成题目，生成后请逐题审校（教师最终决策权），再采纳。
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 md:grid-cols-2">
