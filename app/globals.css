@@ -31,6 +31,44 @@ body {
   background: hsl(var(--background));
   font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC",
     "Microsoft YaHei", sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* ---- 护眼模式（显示设置：html[data-app-theme]） ---- */
+html[data-app-theme="eye-green"] {
+  --background: 110 20% 94%;
+  --card: 110 24% 97%;
+  --popover: 110 24% 97%;
+  --secondary: 110 18% 91%;
+  --muted: 110 18% 91%;
+  --accent: 110 18% 90%;
+  --border: 110 14% 81%;
+  --input: 110 14% 81%;
+}
+html[data-app-theme="eye-beige"] {
+  --background: 40 28% 95%;
+  --card: 42 32% 98%;
+  --popover: 42 32% 98%;
+  --secondary: 40 24% 92%;
+  --muted: 40 24% 92%;
+  --accent: 40 24% 91%;
+  --border: 40 18% 84%;
+  --input: 40 18% 84%;
+}
+
+/* ---- 页面切换淡入 ---- */
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.page-enter {
+  animation: page-in 0.28s ease-out;
 }
 
 /* ---- 图表主题变量（dataviz 参考调色板，浅色/深色两套均已校验） ---- */

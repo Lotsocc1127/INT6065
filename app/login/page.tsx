@@ -28,8 +28,11 @@ export default async function LoginPage() {
     className: u.class?.name ?? null,
   }));
   return (
-    <main className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
+    <main className="relative flex min-h-screen items-center justify-center bg-muted/40 p-4">
       <LoginForm users={list} />
+      <p className="absolute bottom-4 left-0 right-0 text-center text-xs text-muted-foreground">
+        智学慧教 · 制作组 Six gods
+      </p>
     </main>
   );
 }

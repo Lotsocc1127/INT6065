@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Eye, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -89,8 +89,11 @@ export default function TeacherAssignmentsPage() {
                   <TableCell className="text-right tabular-nums">{a.questionCount}</TableCell>
                   <TableCell className="text-right tabular-nums">{a.submissionCount}</TableCell>
                   <TableCell className="text-right">
-                    <Button asChild variant="outline" size="sm">
-                      <Link href={`/teacher/assignments/${a.id}`}>查看批改</Link>
+                    <Button asChild variant="outline" size="sm" className="gap-1.5">
+                      <Link href={`/teacher/assignments/${a.id}`}>
+                        <Eye className="h-3.5 w-3.5" />
+                        查看批改
+                      </Link>
                     </Button>
                   </TableCell>
                 </TableRow>

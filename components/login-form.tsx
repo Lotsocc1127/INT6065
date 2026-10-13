@@ -3,7 +3,9 @@
 import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { LogIn } from "lucide-react";
 import { toast } from "sonner";
+import { BrandLogo } from "@/components/app/brand-logo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -57,7 +59,10 @@ export function LoginForm({ users }: { users: DemoUser[] }) {
   return (
     <Card className="w-full max-w-sm">
       <CardHeader className="text-center">
-        <CardTitle className="text-xl">智学慧教</CardTitle>
+        <div className="mb-1 flex justify-center">
+          <BrandLogo size={48} />
+        </div>
+        <CardTitle className="text-2xl font-bold tracking-tight">智学慧教</CardTitle>
         <CardDescription>数据驱动的教学成长平台</CardDescription>
       </CardHeader>
       <CardContent>
@@ -107,7 +112,8 @@ export function LoginForm({ users }: { users: DemoUser[] }) {
               placeholder="演示密码 123456"
             />
           </div>
-          <Button type="submit" className="w-full" disabled={loading}>
+          <Button type="submit" className="w-full gap-1.5" disabled={loading}>
+            <LogIn className="h-4 w-4" />
             {loading ? "登录中…" : "登录"}
           </Button>
           <div className="text-center text-xs text-muted-foreground">
