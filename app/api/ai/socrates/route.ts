@@ -17,9 +17,14 @@ export async function POST(req: NextRequest) {
     if (!messages.length) return ok({ error: "消息为空" }, 400);
 
     let context: string | undefined;
+    let subjectName: string | undefined;
     if (body?.questionId) {
-      const q = await prisma.question.findUnique({ where: { id: String(body.questionId) } });
+      const q = await prisma.question.findUnique({
+        where: { id: String(body.questionId) },
+        include: { subject: true },
+      });
       if (q) {
+        subjectName = q.subject.name;
         const kpIds = ((): string[] => {
           try {
             const v = JSON.parse(q.kpIds);
@@ -40,6 +45,7 @@ export async function POST(req: NextRequest) {
         include: { subject: true },
       });
       if (kp) {
+        subjectName = kp.subject.name;
         context = `学生当前想学习：${kp.subject.name} · ${kp.code} ${kp.name}${
           kp.description ? `\n知识点说明：${kp.description}` : ""
         }`;
@@ -54,10 +60,13 @@ export async function POST(req: NextRequest) {
         content: String(m.content ?? ""),
       }));
 
-    const reply = await llmChat([{ role: "system", content: socratesSystem(context) }, ...history], {
-      maxTokens: 1024,
-      temperature: 0.6,
-    });
+    const reply = await llmChat(
+      [{ role: "system", content: socratesSystem(context, subjectName) }, ...history],
+      {
+        maxTokens: 1024,
+        temperature: 0.6,
+      }
+    );
     return ok({ reply });
   } catch (e) {
     return fail(e);

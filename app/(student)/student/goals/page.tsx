@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Flag, MessageSquareWarning, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -8,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SubjectSwitcher, type SubjectInfo } from "@/components/app/subject-switcher";
 import {
   Select,
   SelectContent,
@@ -34,6 +36,9 @@ interface KpInfo {
 }
 
 function GoalsPage() {
+  const searchParams = useSearchParams();
+  const subject = searchParams.get("subject") ?? "math";
+  const [subjects, setSubjects] = useState<SubjectInfo[]>([]);
   const [goals, setGoals] = useState<Goal[] | null>(null);
   const [kps, setKps] = useState<KpInfo[]>([]);
   const [content, setContent] = useState("");
@@ -43,11 +48,20 @@ function GoalsPage() {
 
   useEffect(() => {
     load();
-    fetch("/api/subjects/math/knowledge-points")
+    fetch("/api/subjects")
+      .then((r) => r.json())
+      .then((s) => setSubjects(Array.isArray(s) ? s : []))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    // 知识点属于具体科目，切换科目后重置选择
+    setKpId("none");
+    fetch(`/api/subjects/${subject}/knowledge-points`)
       .then((r) => r.json())
       .then((k) => setKps(Array.isArray(k) ? k : []))
       .catch(() => {});
-  }, []);
+  }, [subject]);
 
   async function load() {
     fetch("/api/goals")
@@ -107,6 +121,7 @@ function GoalsPage() {
 
   return (
     <div className="space-y-4">
+      <SubjectSwitcher subjects={subjects} current={subject} />
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
