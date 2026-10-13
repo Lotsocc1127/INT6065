@@ -3,6 +3,7 @@ import { Role } from "@prisma/client";
 import { fail, ok } from "@/lib/api";
 import { requireApiUser } from "@/lib/auth";
 import { avg, tierOf, type Tier } from "@/lib/mastery";
+import { parseArr } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -66,6 +67,35 @@ export async function GET(req: NextRequest) {
       ? avg(assignments.map((a) => a._count.submissions / students.length))
       : 0;
 
+    // 班级掌握度趋势：按天聚合全部 MasteryPoint 历史
+    const points = await prisma.masteryPoint.findMany({
+      where: { mastery: { subjectId: subject.id, studentId: { in: students.map((s) => s.id) } } },
+      orderBy: { at: "asc" },
+    });
+    const dayBuckets = new Map<string, number[]>();
+    for (const p of points) {
+      const d = new Date(p.at);
+      const key = `${d.getMonth() + 1}/${d.getDate()}`;
+      if (!dayBuckets.has(key)) dayBuckets.set(key, []);
+      dayBuckets.get(key)!.push(p.value);
+    }
+    const trend = [...dayBuckets.entries()].map(([date, vals]) => ({ date, avg: avg(vals) }));
+    const trendDelta =
+      trend.length >= 2 ? trend[trend.length - 1].avg - trend[0].avg : 0;
+
+    // 高频错因：全班该科目 AnswerRecord.errorTags 聚合
+    const records = await prisma.answerRecord.findMany({
+      where: { studentId: { in: students.map((s) => s.id) }, question: { subjectId: subject.id } },
+      select: { errorTags: true },
+    });
+    const tagCount = new Map<string, number>();
+    for (const r of records) {
+      for (const t of parseArr(r.errorTags)) tagCount.set(t, (tagCount.get(t) ?? 0) + 1);
+    }
+    const errorTags = [...tagCount.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([tag, count]) => ({ tag, count }));
+
     return ok({
       subject: { code: subject.code, name: subject.name },
       class: { id: cls.id, name: cls.name },
@@ -86,6 +116,9 @@ export async function GET(req: NextRequest) {
         assignmentCount: assignments.length,
         submissionRate: Math.round(submissionRate * 100),
       },
+      trend,
+      trendDelta,
+      errorTags,
     });
   } catch (e) {
     return fail(e);

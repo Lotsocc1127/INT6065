@@ -68,11 +68,11 @@ function assert(cond: unknown, msg: string) {
 async function main() {
   const teacher = await prisma.user.findFirstOrThrow({ where: { role: "TEACHER" } });
   const student = await prisma.user.findFirstOrThrow({
-    where: { role: "STUDENT" },
+    where: { role: "STUDENT", classId: { not: null } },
     orderBy: { name: "asc" },
   });
   const math = await prisma.subject.findUniqueOrThrow({ where: { code: "math" } });
-  const cls = await prisma.class.findFirstOrThrow();
+  const cls = await prisma.class.findUniqueOrThrow({ where: { id: student.classId! } });
   const kps = await prisma.knowledgePoint.findMany({ where: { subjectId: math.id } });
 
   console.log(`\n== 1. 教师 ${teacher.name} 登录 ==`);
@@ -184,7 +184,11 @@ async function main() {
   const dashRes = await t.fetch(`/api/teacher/dashboard?subject=math&classId=${cls.id}`);
   assert(dashRes.ok, `看板接口 ${dashRes.status}`);
   const dash = await dashRes.json();
-  assert(dash.students.length === 10, `看板包含 10 名学生（实际 ${dash.students.length}）`);
+  const classSize = await prisma.user.count({ where: { role: "STUDENT", classId: cls.id } });
+  assert(
+    dash.students.length === classSize,
+    `看板包含本班 ${classSize} 名学生（实际 ${dash.students.length}）`
+  );
   assert(dash.stats.submissionRate > 0, `提交率 > 0（实际 ${dash.stats.submissionRate}%）`);
   const wf = dash.students.find((x: { name: string }) => x.name === student.name);
   assert(wf && wf.tier, `${student.name} 在看板中有分层（${wf.tier}）`);

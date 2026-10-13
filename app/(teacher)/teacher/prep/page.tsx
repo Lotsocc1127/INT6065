@@ -36,7 +36,12 @@ interface KpInfo {
 interface FlowStage {
   stage: string;
   duration: number;
+  intent: string;
   content: string;
+}
+interface PedagogyItem {
+  theory: string;
+  application: string;
 }
 interface PrepResult {
   title: string;
@@ -44,6 +49,7 @@ interface PrepResult {
   keyPoints: string[];
   difficulties: string[];
   flow: FlowStage[];
+  pedagogy: PedagogyItem[];
   boardDesign: string;
   homework: string;
   preview: string;
@@ -73,9 +79,15 @@ function prepToText(p: PrepResult): string {
     lines.push("【教学过程】");
     p.flow.forEach((f) => {
       lines.push(`■ ${f.stage}（${f.duration} 分钟）`);
+      if (f.intent) lines.push(`设计意图：${f.intent}`);
       lines.push(f.content);
       lines.push("");
     });
+  }
+  if (p.pedagogy.length) {
+    lines.push("【教学方法依据】");
+    p.pedagogy.forEach((pg) => lines.push(`- ${pg.theory}：${pg.application}`));
+    lines.push("");
   }
   if (p.boardDesign) {
     lines.push("【板书设计】");
@@ -316,12 +328,14 @@ export default function PrepPage() {
             ))}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label>教学过程（环节 / 分钟 / 内容）</Label>
+                <Label>教学过程（环节 / 分钟 / 设计意图 / 内容）</Label>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() =>
-                    update({ flow: [...result.flow, { stage: "新环节", duration: 5, content: "" }] })
+                    update({
+                      flow: [...result.flow, { stage: "新环节", duration: 5, intent: "", content: "" }],
+                    })
                   }
                   className="gap-1"
                 >
@@ -359,11 +373,74 @@ export default function PrepPage() {
                   </Button>
                   <Textarea
                     className="md:col-span-3"
+                    rows={1}
+                    placeholder="设计意图：本环节依据的教学理论/策略（如：脚手架、先行组织者……）"
+                    value={f.intent}
+                    onChange={(e) => updateFlow(i, { intent: e.target.value })}
+                  />
+                  <Textarea
+                    className="md:col-span-3"
                     rows={2}
                     placeholder="本环节的师生活动要点……"
                     value={f.content}
                     onChange={(e) => updateFlow(i, { content: e.target.value })}
                   />
+                </div>
+              ))}
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>教学方法依据（理论 / 在本教案中的落地方式）</Label>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    update({ pedagogy: [...result.pedagogy, { theory: "", application: "" }] })
+                  }
+                  className="gap-1"
+                >
+                  <Plus className="h-4 w-4" />
+                  添加依据
+                </Button>
+              </div>
+              {result.pedagogy.map((pg, i) => (
+                <div key={i} className="grid gap-2 rounded-lg border p-3 md:grid-cols-[1fr_2fr_auto]">
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">教学理论</Label>
+                    <Input
+                      value={pg.theory}
+                      placeholder="如：最近发展区（ZPD）"
+                      onChange={(e) =>
+                        update({
+                          pedagogy: result.pedagogy.map((x, xi) =>
+                            xi === i ? { ...x, theory: e.target.value } : x
+                          ),
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">落地方式</Label>
+                    <Input
+                      value={pg.application}
+                      placeholder="如：例题设三级台阶，搭脚手架逐步撤除"
+                      onChange={(e) =>
+                        update({
+                          pedagogy: result.pedagogy.map((x, xi) =>
+                            xi === i ? { ...x, application: e.target.value } : x
+                          ),
+                        })
+                      }
+                    />
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="self-end text-destructive"
+                    onClick={() => update({ pedagogy: result.pedagogy.filter((_, xi) => xi !== i) })}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </div>
               ))}
             </div>

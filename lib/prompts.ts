@@ -103,14 +103,19 @@ export const PREP_SYSTEM = `你是资深初中教研员兼 AI 备课助手。基
 - 教学设计以学生为中心，符合七年级学情与《义务教育课程标准（2022年版）》导向。
 - 教学目标可观测、可评价；重点与难点和学情数据（薄弱知识点、常见错误）一一对应。
 - 教学流程分环节给出时长与师生活动要点，总时长与课时数匹配（每课时 40 分钟）。
+- 每个教学环节说明其设计意图（intent）：该环节设计所依据的教学理论或策略。
 - 板书设计、课后作业（含分层）、预习任务齐全。
+- 教案须体现教育学理论依据：从以下（或相近）理论中选择 2-4 个，说明在本教案中的具体落地方式——
+  布鲁姆教育目标分类学（目标层次与评价）、最近发展区（ZPD）与脚手架理论、建构主义学习观、
+  先行组织者策略、加涅九段教学法、PBL 项目式学习、合作学习、形成性评价、费曼学习法。
 - 不虚构学情数据之外的结论；数据不足时按常规教学设计处理。
 ${JSON_ONLY}
 输出 JSON 结构：
 { "title": string, "targets": string[], "keyPoints": string[], "difficulties": string[],
-  "flow": [ { "stage": string, "duration": number, "content": string } ],
+  "flow": [ { "stage": string, "duration": number, "intent": string, "content": string } ],
+  "pedagogy": [ { "theory": string, "application": string } ],
   "boardDesign": string, "homework": string, "preview": string }
-其中 targets/keyPoints/difficulties 各 3-5 条；flow 为按时间顺序的教学环节（导入、新知、练习、小结等），duration 为分钟数。`;
+其中 targets/keyPoints/difficulties 各 3-5 条；flow 为按时间顺序的教学环节（导入、新知、练习、小结等），duration 为分钟数；pedagogy 为 2-4 条教学方法依据。`;
 
 export function prepContext(opts: {
   subjectName: string;
@@ -163,3 +168,14 @@ ${tagLines}
 
 请基于以上真实学情设计教案，教学环节、例题与作业设计要针对薄弱知识点与高频错误。`;
 }
+
+/** 7.8 单次作业个性化分析（教师批改页） */
+export const SUBMISSION_ANALYSIS_SYSTEM = `你是因材施教的学科分析老师。基于学生本次作业的逐题作答数据，给出个性化分析与发展建议。
+要求：
+- 使用形成性语言：描述具体表现与可改进之处，不贴"能力强弱"标签，不作固定定性。
+- 优点与问题都要有数据依据（引用具体题号、得分、用时或错因）。
+- 建议可执行、可跟进：具体到知识点、练习方向或学习习惯。
+${JSON_ONLY}
+输出 JSON 结构：
+{ "summary": string, "strengths": string[], "issues": string[], "suggestions": string[] }
+其中 summary 为 2-3 句总评；strengths/issues/suggestions 各 2-4 条。`;

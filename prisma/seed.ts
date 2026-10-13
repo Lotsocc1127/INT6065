@@ -65,9 +65,10 @@ async function main() {
   const admin = await prisma.user.create({
     data: { name: "管理员", role: Role.ADMIN, password: passwordHash },
   });
-  const cls = await prisma.class.create({
-    data: { name: "七年级(3)班" },
-  });
+  // 三个班级：七年级(1)/(2)班各 30 人（生成名单），七年级(3)班 10 人（固定演示名单）
+  const cls1 = await prisma.class.create({ data: { name: "七年级(1)班" } });
+  const cls2 = await prisma.class.create({ data: { name: "七年级(2)班" } });
+  const cls = await prisma.class.create({ data: { name: "七年级(3)班" } });
 
   // 基础掌握度画像：学优/中等/学弱 三档
   const studentProfiles: { name: string; base: number }[] = [
@@ -82,14 +83,41 @@ async function main() {
     { name: "王芳", base: 0.4 },
     { name: "吴桐", base: 0.3 },
   ];
+
+  // 大班学生姓名生成（确定性随机，班内去重）
+  const SURNAMES = ["陈", "李", "张", "王", "刘", "杨", "黄", "吴", "周", "徐", "孙", "马", "朱", "胡", "郭", "何", "林", "罗", "郑", "梁"];
+  const GIVEN_NAMES = ["子轩", "梓萱", "浩然", "雨桐", "欣怡", "宇轩", "思远", "若曦", "嘉懿", "俊杰", "诗涵", "明轩", "可欣", "博文", "雅静", "天佑", "静怡", "昊然", "梦琪", "致远"];
+  function genName(used: Set<string>): string {
+    for (;;) {
+      const n = pick(SURNAMES) + pick(GIVEN_NAMES);
+      if (!used.has(n)) {
+        used.add(n);
+        return n;
+      }
+    }
+  }
+
   const students: User[] = [];
   const studentBase = new Map<string, number>();
-  for (const p of studentProfiles) {
-    const stu = await prisma.user.create({
-      data: { name: p.name, role: Role.STUDENT, classId: cls.id, password: passwordHash },
-    });
-    studentBase.set(stu.id, p.base);
-    students.push(stu);
+  async function createStudents(classId: string, profiles: { name: string; base: number }[]) {
+    for (const p of profiles) {
+      const stu = await prisma.user.create({
+        data: { name: p.name, role: Role.STUDENT, classId, password: passwordHash },
+      });
+      studentBase.set(stu.id, p.base);
+      students.push(stu);
+    }
+  }
+  // 七年级(3)班：固定演示名单
+  await createStudents(cls.id, studentProfiles);
+  // 七年级(1)/(2)班：各 30 名生成学生，基础画像在 0.3-0.9 均匀分布
+  for (const big of [cls1, cls2]) {
+    const used = new Set<string>();
+    const profiles = Array.from({ length: 30 }, () => ({
+      name: genName(used),
+      base: Math.round((0.3 + rng() * 0.6) * 100) / 100,
+    }));
+    await createStudents(big.id, profiles);
   }
 
   // ---------- 学科、知识点 ----------
@@ -373,36 +401,42 @@ async function main() {
     }
   }
 
-  async function seedMastery(studentId: string, kps: typeof mathKps, map: Map<string, number>) {
-    for (const kp of kps) {
-      const final = map.get(kp.id)!;
-      const mastery = await prisma.mastery.create({
-        data: {
-          studentId,
-          kpId: kp.id,
-          subjectId: kp.subjectId,
-          value: final,
-          history: {
-            create: Array.from({ length: 5 }, (_, i) => {
-              // 近两周 5 个点，整体向上、贴近最终值
-              const trend = final - (4 - i) * 0.06 + (rng() - 0.5) * 0.05;
-              return {
-                value: Math.min(1, Math.max(0, trend)),
-                at: new Date(Date.now() - (4 - i) * 3 * DAY),
-              };
-            }),
-          },
-        },
+  // 批量写入 Mastery 与历史轨迹（createMany 提速，70 人 × 24 KP 逐条 create 太慢）
+  const masteryRows: { studentId: string; kpId: string; subjectId: string; value: number }[] = [];
+  for (const stu of students) {
+    for (const kp of [...mathKps, ...engKps, ...chiKps]) {
+      const map =
+        kp.subjectId === math.id
+          ? mathMasteryMap
+          : kp.subjectId === english.id
+            ? engMasteryMap
+            : chiMasteryMap;
+      masteryRows.push({
+        studentId: stu.id,
+        kpId: kp.id,
+        subjectId: kp.subjectId,
+        value: map.get(stu.id)!.get(kp.id)!,
       });
-      void mastery;
     }
   }
-
-  for (const stu of students) {
-    await seedMastery(stu.id, mathKps, mathMasteryMap.get(stu.id)!);
-    await seedMastery(stu.id, engKps, engMasteryMap.get(stu.id)!);
-    await seedMastery(stu.id, chiKps, chiMasteryMap.get(stu.id)!);
+  await prisma.mastery.createMany({ data: masteryRows });
+  const createdMasteries = await prisma.mastery.findMany({
+    where: { studentId: { in: students.map((s) => s.id) } },
+    select: { id: true, value: true },
+  });
+  const historyRows: { masteryId: string; value: number; at: Date }[] = [];
+  for (const m of createdMasteries) {
+    for (let i = 0; i < 5; i++) {
+      // 近两周 5 个点，整体向上、贴近最终值
+      const trend = m.value - (4 - i) * 0.06 + (rng() - 0.5) * 0.05;
+      historyRows.push({
+        masteryId: m.id,
+        value: Math.min(1, Math.max(0, trend)),
+        at: new Date(Date.now() - (4 - i) * 3 * DAY),
+      });
+    }
   }
+  await prisma.masteryPoint.createMany({ data: historyRows });
 
   // ---------- 演示作业 + 作答 ----------
   const errorTagPool = ["计算失误", "概念混淆", "步骤遗漏", "审题错误"];
@@ -413,9 +447,10 @@ async function main() {
     type: AssignmentType;
     title: string;
     stems: string[];
+    students: User[];
     masteryMap: Map<string, Map<string, number>>;
   }) {
-    const { subjectId, classId, type, title, stems, masteryMap } = opts;
+    const { subjectId, classId, type, title, stems, students: classStudents, masteryMap } = opts;
     const questions = await Promise.all(
       stems.map((stem) =>
         prisma.question.findFirstOrThrow({
@@ -436,93 +471,119 @@ async function main() {
       },
     });
 
-    for (const stu of students) {
-      const answers = await Promise.all(
-        questions.map(async (q) => {
-          const kpIds = parseArr(q.kpIds);
-          // 以该生对应知识点的掌握度为正确概率（演示数据）
-          const kpMastery = Math.max(...kpIds.map((id) => masteryMap.get(stu.id)!.get(id) ?? 0.5));
-          const correct = rng() < kpMastery * 0.95;
-          let response = q.answer;
-          if (!correct) {
-            if (q.type === QuestionType.SINGLE_CHOICE) {
-              const opts = parseArr<string>(q.options);
-              response = pick(opts.filter((o) => o !== q.answer)) ?? "（空）";
-            } else {
-              response = String(Number(q.answer) + pick([-1, 1, 2, -2, 3])).trim();
-            }
+    // 逐生计算作答（确定性随机）
+    const computed = classStudents.map((stu) => ({
+      stu,
+      answers: questions.map((q) => {
+        const kpIds = parseArr(q.kpIds);
+        // 以该生对应知识点的掌握度为正确概率（演示数据）
+        const kpMastery = Math.max(...kpIds.map((id) => masteryMap.get(stu.id)!.get(id) ?? 0.5));
+        const correct = rng() < kpMastery * 0.95;
+        let response = q.answer;
+        if (!correct) {
+          if (q.type === QuestionType.SINGLE_CHOICE) {
+            const qOpts = parseArr<string>(q.options);
+            response = pick(qOpts.filter((o) => o !== q.answer)) ?? "（空）";
+          } else {
+            response = String(Number(q.answer) + pick([-1, 1, 2, -2, 3])).trim();
           }
-          return { questionId: q.id, kpIds, correct, response };
-        })
-      );
-      const submission = await prisma.submission.create({
-        data: {
-          assignmentId: assignment.id,
-          studentId: stu.id,
-          submittedAt: new Date(Date.now() - DAY - Math.floor(rng() * 2 * DAY)),
-          answers: {
-            create: answers.map((a) => ({
-              questionId: a.questionId,
-              kpIds: toArrStr(a.kpIds),
-              studentId: stu.id,
-              response: a.response,
-              isCorrect: a.correct,
-              score: a.correct ? 1 : 0,
-              timeSpentMs: 30_000 + Math.floor(rng() * 240_000),
-              errorTags: a.correct ? "[]" : toArrStr([pick(errorTagPool)]),
-            })),
-          },
-        },
-      });
-      void submission;
-
-      // 错题本
-      for (const a of answers) {
-        if (!a.correct) {
-          await prisma.wrongQuestion.create({
-            data: {
-              studentId: stu.id,
-              questionId: a.questionId,
-              kpIds: toArrStr(a.kpIds),
-              wrongCount: 1,
-            },
-          });
         }
-      }
-    }
+        return { questionId: q.id, kpIds, correct, response };
+      }),
+    }));
+
+    // 批量写入（createMany 提速）：先建 submission 再回查 id
+    await prisma.submission.createMany({
+      data: computed.map(({ stu }) => ({
+        assignmentId: assignment.id,
+        studentId: stu.id,
+        submittedAt: new Date(Date.now() - DAY - Math.floor(rng() * 2 * DAY)),
+      })),
+    });
+    const subs = await prisma.submission.findMany({
+      where: { assignmentId: assignment.id },
+      select: { id: true, studentId: true },
+    });
+    const subByStudent = new Map(subs.map((s) => [s.studentId, s.id]));
+
+    await prisma.answerRecord.createMany({
+      data: computed.flatMap(({ stu, answers }) =>
+        answers.map((a) => ({
+          submissionId: subByStudent.get(stu.id)!,
+          questionId: a.questionId,
+          kpIds: toArrStr(a.kpIds),
+          studentId: stu.id,
+          response: a.response,
+          isCorrect: a.correct,
+          score: a.correct ? 1 : 0,
+          timeSpentMs: 30_000 + Math.floor(rng() * 240_000),
+          errorTags: a.correct ? "[]" : toArrStr([pick(errorTagPool)]),
+        }))
+      ),
+    });
+
+    // 错题本
+    await prisma.wrongQuestion.createMany({
+      data: computed.flatMap(({ stu, answers }) =>
+        answers
+          .filter((a) => !a.correct)
+          .map((a) => ({
+            studentId: stu.id,
+            questionId: a.questionId,
+            kpIds: toArrStr(a.kpIds),
+            wrongCount: 1,
+          }))
+      ),
+    });
     return assignment;
   }
 
-  const assignment = await seedDemoAssignment({
-    subjectId: math.id,
-    classId: cls.id,
-    type: AssignmentType.HOMEWORK,
-    title: "一元一次方程 · 第 1 周作业",
-    stems: [
-      "已知 3x = 9，则 x 等于（　）",
-      "解方程：x + 3 = 8，得 x = ______。",
-      "解方程：3x - 2 = 7，得 x = ______。",
-      "解方程：2(x + 3) = 14，得 x = ______。",
-      "甲、乙两地相距 240 km，一辆汽车从甲地出发，以 60 km/h 的速度匀速行驶，______ 小时后到达乙地。",
-    ],
-    masteryMap: mathMasteryMap,
-  });
-
-  const quiz = await seedDemoAssignment({
-    subjectId: chinese.id,
-    classId: cls.id,
-    type: AssignmentType.QUIZ,
-    title: "语文基础 · 第 1 周小测",
+  const mathStems = [
+    "已知 3x = 9，则 x 等于（　）",
+    "解方程：x + 3 = 8，得 x = ______。",
+    "解方程：3x - 2 = 7，得 x = ______。",
+    "解方程：2(x + 3) = 14，得 x = ______。",
+    "甲、乙两地相距 240 km，一辆汽车从甲地出发，以 60 km/h 的速度匀速行驶，______ 小时后到达乙地。",
+  ];
+  const chiStems = [
     // 只选选择题：错答生成器对填空题按数值加减处理，语文填空题不适合
-    stems: [
-      "下列词语中没有错别字的一项是（　）",
-      "下列句子中加点成语使用恰当的一项是（　）",
-      "下列句子中有语病的一项是（　）",
-      "下列句子与原文一致的一项是（　）",
-      "《咏雪》中，面对谢道韫「未若柳絮因风起」的比喻，谢太傅的反应是（　）",
-    ],
-    masteryMap: chiMasteryMap,
-  });
+    "下列词语中没有错别字的一项是（　）",
+    "下列句子中加点成语使用恰当的一项是（　）",
+    "下列句子中有语病的一项是（　）",
+    "下列句子与原文一致的一项是（　）",
+    "《咏雪》中，面对谢道韫「未若柳絮因风起」的比喻，谢太傅的反应是（　）",
+  ];
+
+  const studentsByClass = new Map<string, User[]>();
+  for (const s of students) {
+    const list = studentsByClass.get(s.classId ?? "") ?? [];
+    list.push(s);
+    studentsByClass.set(s.classId ?? "", list);
+  }
+  const demoAssignments = [];
+  for (const c of [cls1, cls2, cls]) {
+    const classStudents = studentsByClass.get(c.id) ?? [];
+    demoAssignments.push(
+      await seedDemoAssignment({
+        subjectId: math.id,
+        classId: c.id,
+        type: AssignmentType.HOMEWORK,
+        title: "一元一次方程 · 第 1 周作业",
+        stems: mathStems,
+        students: classStudents,
+        masteryMap: mathMasteryMap,
+      }),
+      await seedDemoAssignment({
+        subjectId: chinese.id,
+        classId: c.id,
+        type: AssignmentType.QUIZ,
+        title: "语文基础 · 第 1 周小测",
+        stems: chiStems,
+        students: classStudents,
+        masteryMap: chiMasteryMap,
+      })
+    );
+  }
 
   // ---------- 目标（演示） ----------
   const goalTemplates = [
@@ -543,11 +604,13 @@ async function main() {
   console.log("种子完成：");
   console.log(`  教师：${teacher.name}`);
   console.log(`  管理员：${admin.name}`);
-  console.log(`  班级：${cls.name}（${students.length} 名学生）`);
+  console.log(
+    `  班级：${cls1.name}（30 人）、${cls2.name}（30 人）、${cls.name}（10 人），共 ${students.length} 名学生`
+  );
   console.log(`  数学：${mathKpDefs.length} 个知识点，${mathQuestions.length} 道题`);
   console.log(`  英语：${engKpDefs.length} 个知识点，${englishQuestions.length} 道题`);
   console.log(`  语文：${chiKpDefs.length} 个知识点，${chineseQuestions.length} 道题`);
-  console.log(`  演示作业：${assignment.title}、${quiz.title}（各 10 份作答）`);
+  console.log(`  演示作业：每班 2 份（数学作业 + 语文小测），共 ${demoAssignments.length} 份`);
   console.log(`  演示账号密码统一为 ${DEMO_PASSWORD}（bcrypt 哈希存储）`);
 }
 

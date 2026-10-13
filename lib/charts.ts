@@ -96,13 +96,16 @@ export function chartTheme(): ChartTheme {
   };
 }
 
-/** 班级掌握度热力图：行=学生，列=知识点，值=掌握度（连续色阶，蓝 100→700） */
+/** 班级掌握度热力图：行=学生，列=知识点，值=掌握度（连续色阶，蓝 100→700）
+ * hideLabels：行数多（>16）时隐藏格内数值，悬停查看，避免拥挤 */
 export function heatmapOption(opts: {
   students: string[];
   kps: string[];
   data: [number, number, number][]; // [kpIdx, studentIdx, value]（x 轴=知识点，y 轴=学生）
+  hideLabels?: boolean;
 }) {
   const t = chartTheme();
+  const short = (s: string) => (s.length > 10 ? `${s.slice(0, 9)}…` : s);
   return {
     backgroundColor: "transparent",
     animationDuration: 500,
@@ -115,13 +118,19 @@ export function heatmapOption(opts: {
       borderColor: t.grid,
       textStyle: { color: t.ink },
     },
-    grid: { left: 8, right: 24, top: 8, bottom: 76, containLabel: true },
+    grid: { left: 8, right: 24, top: 8, bottom: 96, containLabel: true },
     xAxis: {
       type: "category",
       data: opts.kps,
       splitArea: { show: true },
       axisLine: { lineStyle: { color: t.axis } },
-      axisLabel: { color: t.muted },
+      // 知识点名称较长：旋转 + 超长截断（完整名称见悬停提示）
+      axisLabel: {
+        color: t.muted,
+        rotate: 30,
+        interval: 0,
+        formatter: (v: string) => short(v),
+      },
       axisTick: { show: false },
     },
     yAxis: {
@@ -154,13 +163,66 @@ export function heatmapOption(opts: {
         type: "heatmap",
         data: opts.data,
         label: {
-          show: true,
+          show: !opts.hideLabels,
           formatter: (p: { value: [number, number, number] }) => `${Math.round(p.value[2] * 100)}`,
           fontSize: 10,
           color: t.ink2,
         },
         itemStyle: { borderColor: t.surface, borderWidth: 2 },
         emphasis: { itemStyle: { borderColor: t.ink, borderWidth: 2 } },
+      },
+    ],
+  };
+}
+
+/** 横向柱状图：类别在 y 轴（名称较长时不被截断），柱端直接标注数值；单序列槽位 1 蓝 */
+export function hbarOption(opts: {
+  categories: string[];
+  name: string;
+  data: number[];
+  max?: number;
+  valueFormatter?: (v: number) => string;
+}) {
+  const t = chartTheme();
+  const fmt = opts.valueFormatter ?? ((v: number) => `${Math.round(v * 100)}%`);
+  return {
+    backgroundColor: "transparent",
+    animationDuration: 500,
+    tooltip: {
+      formatter: (p: { value: number }) => fmt(p.value),
+      backgroundColor: t.surface,
+      borderColor: t.grid,
+      textStyle: { color: t.ink },
+    },
+    grid: { left: 8, right: 44, top: 8, bottom: 8, containLabel: true },
+    xAxis: {
+      type: "value",
+      ...(opts.max != null ? { min: 0, max: opts.max } : {}),
+      axisLabel: { color: t.muted },
+      splitLine: { lineStyle: { color: t.grid } },
+    },
+    yAxis: {
+      type: "category",
+      data: opts.categories,
+      inverse: true,
+      axisLine: { lineStyle: { color: t.axis } },
+      axisLabel: { color: t.ink2 },
+      axisTick: { show: false },
+    },
+    series: [
+      {
+        name: opts.name,
+        type: "bar",
+        data: opts.data,
+        barWidth: "55%",
+        itemStyle: { color: t.s1, borderRadius: [0, 4, 4, 0] },
+        label: {
+          show: true,
+          position: "right",
+          formatter: (p: { value: number }) => fmt(p.value),
+          color: t.ink2,
+          fontSize: 11,
+        },
       },
     ],
   };

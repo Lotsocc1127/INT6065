@@ -7,6 +7,7 @@ import { AlertTriangle, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -18,7 +19,7 @@ import { EChart } from "@/components/charts/echart";
 import { StatCard } from "@/components/app/stat-card";
 import { SubjectSwitcher, type SubjectInfo } from "@/components/app/subject-switcher";
 import { TierBadge, TierLegend } from "@/components/app/tier-badge";
-import { barOption, heatmapOption } from "@/lib/charts";
+import { hbarOption, heatmapOption, lineOption } from "@/lib/charts";
 import { TIER_META, type Tier } from "@/lib/mastery";
 import { pct } from "@/lib/utils";
 
@@ -44,6 +45,9 @@ interface DashboardData {
     assignmentCount: number;
     submissionRate: number;
   };
+  trend: { date: string; avg: number }[];
+  trendDelta: number;
+  errorTags: { tag: string; count: number }[];
 }
 
 function DashboardInner() {
@@ -55,6 +59,7 @@ function DashboardInner() {
   const [subjects, setSubjects] = useState<SubjectInfo[]>([]);
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState("");
+  const [tierFilter, setTierFilter] = useState<"all" | Tier>("all");
 
   useEffect(() => {
     fetch("/api/subjects")
@@ -78,23 +83,51 @@ function DashboardInner() {
       .catch((e) => setError(e.message));
   }, [subject, classId]);
 
+  // 热力图行：按分层筛选 + 平均掌握度降序（薄弱学生靠下，便于观察缺口）
+  const displayStudents = useMemo(() => {
+    if (!data) return [];
+    const list = tierFilter === "all" ? [...data.students] : data.students.filter((s) => s.tier === tierFilter);
+    list.sort((a, b) => b.avg - a.avg);
+    return list;
+  }, [data, tierFilter]);
+
   const heatmap = useMemo(() => {
     if (!data) return null;
     return heatmapOption({
-      students: data.students.map((s) => s.name),
+      students: displayStudents.map((s) => s.name),
       kps: data.kps.map((k) => `${k.code} ${k.name}`),
-      data: data.students.flatMap((s, si) =>
+      data: displayStudents.flatMap((s, si) =>
         data.kps.map((k, ki) => [ki, si, s.values[k.id] ?? 0] as [number, number, number])
       ),
+      hideLabels: displayStudents.length > 16,
     });
-  }, [data]);
+  }, [data, displayStudents]);
 
   const kpBar = useMemo(() => {
     if (!data) return null;
-    return barOption({
+    return hbarOption({
       categories: data.kps.map((k) => `${k.code} ${k.name}`),
       name: "班级平均掌握度",
       data: data.kps.map((k) => k.classAvg),
+      max: 1,
+    });
+  }, [data]);
+
+  const trendChart = useMemo(() => {
+    if (!data || !data.trend.length) return null;
+    return lineOption({
+      xLabels: data.trend.map((t) => t.date),
+      series: [{ name: "班级平均掌握度", data: data.trend.map((t) => t.avg) }],
+    });
+  }, [data]);
+
+  const errorTagChart = useMemo(() => {
+    if (!data || !data.errorTags.length) return null;
+    return hbarOption({
+      categories: data.errorTags.map((t) => t.tag),
+      name: "错因次数",
+      data: data.errorTags.map((t) => t.count),
+      valueFormatter: (v) => `${v} 次`,
     });
   }, [data]);
 
@@ -175,22 +208,34 @@ function DashboardInner() {
               <CardHeader>
                 <CardTitle>学生 × 知识点 掌握度热力图</CardTitle>
                 <CardDescription>
-                  颜色深浅表示掌握程度；悬停查看具体数值。支持按行比较每位学生的知识缺口。
+                  颜色深浅表示掌握程度；悬停查看具体数值。按平均掌握度降序排列，薄弱学生靠下。
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                {heatmap ? <EChart option={heatmap} height={340} /> : null}
+              <CardContent className="space-y-3">
+                <Tabs value={tierFilter} onValueChange={(v) => setTierFilter(v as "all" | Tier)}>
+                  <TabsList>
+                    <TabsTrigger value="all">全部（{data.students.length}）</TabsTrigger>
+                    {(Object.keys(TIER_META) as Tier[]).map((t) => (
+                      <TabsTrigger key={t} value={t}>
+                        {TIER_META[t].short}（{data.students.filter((s) => s.tier === t).length}）
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
+                {heatmap ? (
+                  <EChart option={heatmap} height={Math.max(300, displayStudents.length * 26 + 110)} />
+                ) : null}
               </CardContent>
             </Card>
 
             <div className="space-y-4">
-              {/* 知识点平均 */}
+              {/* 知识点平均（横向柱状图，名称完整显示） */}
               <Card>
                 <CardHeader>
                   <CardTitle>知识点班级平均</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {kpBar ? <EChart option={kpBar} height={180} /> : null}
+                  {kpBar ? <EChart option={kpBar} height={data.kps.length * 34 + 40} /> : null}
                 </CardContent>
               </Card>
 
@@ -233,6 +278,40 @@ function DashboardInner() {
                 </CardContent>
               </Card>
             </div>
+          </div>
+
+          {/* 趋势与错因 */}
+          <div className="grid gap-4 lg:grid-cols-3">
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <CardTitle>班级掌握度趋势</CardTitle>
+                <CardDescription>
+                  近两周班级平均掌握度变化
+                  {data.trend.length >= 2 ? (
+                    <span className={data.trendDelta >= 0 ? "text-emerald-600" : "text-red-500"}>
+                      （{data.trendDelta >= 0 ? "+" : ""}
+                      {Math.round(data.trendDelta * 100)} 个百分点）
+                    </span>
+                  ) : null}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {trendChart ? <EChart option={trendChart} height={240} /> : null}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>高频错因分布</CardTitle>
+                <CardDescription>全班该科目作答的错误标签统计</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {errorTagChart ? (
+                  <EChart option={errorTagChart} height={Math.max(120, data.errorTags.length * 34 + 40)} />
+                ) : (
+                  <p className="py-8 text-center text-sm text-muted-foreground">暂无错因数据</p>
+                )}
+              </CardContent>
+            </Card>
           </div>
 
           {/* 共性薄弱点提示 */}

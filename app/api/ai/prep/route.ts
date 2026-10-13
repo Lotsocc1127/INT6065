@@ -105,7 +105,8 @@ export async function POST(req: NextRequest) {
       targets: string[];
       keyPoints: string[];
       difficulties: string[];
-      flow: { stage: string; duration: number; content: string }[];
+      flow: { stage: string; duration: number; intent: string; content: string }[];
+      pedagogy: { theory: string; application: string }[];
       boardDesign: string;
       homework: string;
       preview: string;
@@ -139,9 +140,13 @@ export async function POST(req: NextRequest) {
       .map((f, i) => ({
         stage: str(f?.stage, `环节 ${i + 1}`),
         duration: Math.min(45, Math.max(1, Math.round(Number(f?.duration) || 5))),
+        intent: str(f?.intent),
         content: str(f?.content),
       }))
       .filter((f) => f.content);
+    const pedagogy = (Array.isArray(result?.pedagogy) ? result.pedagogy : []).slice(0, 6)
+      .map((p) => ({ theory: str(p?.theory), application: str(p?.application) }))
+      .filter((p) => p.theory && p.application);
 
     const prep = {
       title: str(result?.title, `${subject.name}教案`),
@@ -149,6 +154,7 @@ export async function POST(req: NextRequest) {
       keyPoints: strArr(result?.keyPoints),
       difficulties: strArr(result?.difficulties),
       flow,
+      pedagogy,
       boardDesign: str(result?.boardDesign),
       homework: str(result?.homework),
       preview: str(result?.preview),
