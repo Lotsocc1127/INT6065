@@ -20,6 +20,7 @@ const ITEMS: { title: string; desc: string }[] = [
   { title: "透明与问责", desc: "每条建议可解释；AI 仅辅助，教师可修改/否决并负责。" },
   { title: "学业依赖", desc: "苏格拉底辅导不给答案；高阶认知（分析/评价/创造）留给学生。" },
   { title: "数字鸿沟", desc: "多终端可用；提供必要设备/离线方案。" },
+  { title: "AI 备课助手", desc: "教案仅供备课参考，教师须审核修改后使用，AI 不作教学决策。" },
 ];
 
 export function GovernanceModal() {

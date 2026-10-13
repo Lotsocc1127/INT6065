@@ -11,6 +11,7 @@ const LINKS = [
   { href: "/teacher", label: "班级看板" },
   { href: "/teacher/assignments", label: "作业管理" },
   { href: "/teacher/assignments/new", label: "布置作业" },
+  { href: "/teacher/prep", label: "AI 备课" },
 ];
 
 export function TeacherNav() {
