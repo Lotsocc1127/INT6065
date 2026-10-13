@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-AI 学生成长系统（Next.js 14 + Prisma/PostgreSQL + NextAuth + ECharts + llmClient）。
+智学慧教（数据驱动的教学成长平台；Next.js 14 + Prisma/PostgreSQL + NextAuth + ECharts + llmClient）。
 功能与技术说明见 README.md，本文件只记**非显而易见的操作知识**。
 
 ## 网络（重要）

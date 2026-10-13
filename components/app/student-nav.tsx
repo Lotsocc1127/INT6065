@@ -25,7 +25,7 @@ export function StudentNav() {
         <div className="flex min-w-0 items-center gap-4">
           <Link href="/student" className="flex shrink-0 items-center gap-2 font-semibold">
             <GraduationCap className="h-5 w-5" />
-            <span className="hidden md:inline">AI 学生成长系统</span>
+            <span className="hidden md:inline">智学慧教</span>
             <span className="rounded bg-primary px-1.5 py-0.5 text-xs text-primary-foreground">学生端</span>
           </Link>
           <nav className="flex items-center gap-0.5 overflow-x-auto">

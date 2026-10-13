@@ -56,8 +56,8 @@ export function LoginForm({ users }: { users: DemoUser[] }) {
   return (
     <Card className="w-full max-w-sm">
       <CardHeader className="text-center">
-        <CardTitle className="text-xl">AI 学生成长系统</CardTitle>
-        <CardDescription>教师端 · 学生端 · 数据治理</CardDescription>
+        <CardTitle className="text-xl">智学慧教</CardTitle>
+        <CardDescription>数据驱动的教学成长平台</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={onSubmit} className="space-y-4">

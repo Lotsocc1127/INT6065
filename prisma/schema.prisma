@@ -1,4 +1,4 @@
-// AI 学生成长系统 · 数据模型
+// 智学慧教 · 数据模型
 // 依据《开发文档》第 5 节。数组字段以 JSON 字符串存储（兼容 SQLite 与 PostgreSQL）。
 // 部署目标为 Vercel + Neon（PostgreSQL）；本地开发同样使用 PostgreSQL（见 README）。
 

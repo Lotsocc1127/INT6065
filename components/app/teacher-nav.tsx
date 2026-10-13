@@ -21,7 +21,7 @@ export function TeacherNav() {
         <div className="flex items-center gap-6">
           <Link href="/teacher" className="flex items-center gap-2 font-semibold">
             <GraduationCap className="h-5 w-5" />
-            AI 学生成长系统
+            智学慧教
             <span className="hidden rounded bg-primary px-1.5 py-0.5 text-xs text-primary-foreground md:inline">
               教师端
             </span>
