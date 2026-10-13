@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EChart } from "@/components/charts/echart";
 import { EmptyState } from "@/components/app/empty-state";
 import { hbarOption } from "@/lib/charts";
+import { TIER_META, type Tier } from "@/lib/mastery";
 import { fmtDate, fmtDateTime, fmtDuration, pct } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +26,7 @@ interface QuestionRow {
   stem: string;
   options: string[];
   kpCodes: string[];
+  tier: string | null;
   answer?: string;
   analysis?: string | null;
 }
@@ -305,6 +307,11 @@ export default function AssignmentDetailPage({ params }: { params: { id: string 
                             <span className="font-medium">
                               第 {i + 1} 题 · {TYPE_LABEL[q?.type ?? ""] ?? "—"}
                             </span>
+                            {q?.tier ? (
+                              <Badge className="bg-amber-100 text-amber-800">
+                                仅{TIER_META[q.tier as Tier].short}层
+                              </Badge>
+                            ) : null}
                             {q?.kpCodes.map((c) => (
                               <Badge key={c} variant="secondary">
                                 {c}
@@ -507,6 +514,13 @@ export default function AssignmentDetailPage({ params }: { params: { id: string 
                   {q.order}. {TYPE_LABEL[q.type] ?? q.type}
                 </span>
                 <Badge variant="outline">难度 {q.difficulty}</Badge>
+                {q.tier ? (
+                  <Badge className="bg-amber-100 text-amber-800">
+                    仅{TIER_META[q.tier as Tier].short}层
+                  </Badge>
+                ) : (
+                  <Badge variant="outline">全体</Badge>
+                )}
                 {q.kpCodes.map((c) => (
                   <Badge key={c} variant="secondary">
                     {c}

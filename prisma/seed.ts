@@ -8,6 +8,7 @@
 import { PrismaClient, QuestionType, AssignmentType, Role, type User } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { parseArr, toArrStr } from "../lib/json";
+import { avg, tierOf } from "../lib/mastery";
 
 const prisma = new PrismaClient();
 
@@ -460,8 +461,20 @@ async function main() {
     stems: string[];
     students: User[];
     masteryMap: Map<string, Map<string, number>>;
+    /** 与 stems 对应：每题的适用层级（null = 全体可见） */
+    tierByIndex?: (string | null)[];
   }) {
-    const { subjectId, classId, type, title, stems, students: classStudents, masteryMap } = opts;
+    const {
+      subjectId,
+      classId,
+      type,
+      title,
+      stems,
+      students: classStudents,
+      masteryMap,
+      tierByIndex,
+    } = opts;
+    const tiers = tierByIndex ?? stems.map(() => null);
     const questions = await Promise.all(
       stems.map((stem) =>
         prisma.question.findFirstOrThrow({
@@ -477,31 +490,42 @@ async function main() {
         title,
         dueAt: new Date(Date.now() + 3 * DAY),
         questions: {
-          create: questions.map((q, i) => ({ questionId: q.id, order: i + 1 })),
+          create: questions.map((q, i) => ({
+            questionId: q.id,
+            order: i + 1,
+            tier: tiers[i] ?? null,
+          })),
         },
       },
     });
 
-    // 逐生计算作答（确定性随机）
-    const computed = classStudents.map((stu) => ({
-      stu,
-      answers: questions.map((q) => {
-        const kpIds = parseArr(q.kpIds);
-        // 以该生对应知识点的掌握度为正确概率（演示数据）
-        const kpMastery = Math.max(...kpIds.map((id) => masteryMap.get(stu.id)!.get(id) ?? 0.5));
-        const correct = rng() < kpMastery * 0.95;
-        let response = q.answer;
-        if (!correct) {
-          if (q.type === QuestionType.SINGLE_CHOICE) {
-            const qOpts = parseArr<string>(q.options);
-            response = pick(qOpts.filter((o) => o !== q.answer)) ?? "（空）";
-          } else {
-            response = String(Number(q.answer) + pick([-1, 1, 2, -2, 3])).trim();
+    // 逐生计算作答（确定性随机；分层作业只作答本层可见题目）
+    const computed = classStudents.map((stu) => {
+      const stuTier = tierOf(avg([...masteryMap.get(stu.id)!.values()]));
+      const visibleIdxs = questions
+        .map((_, i) => i)
+        .filter((i) => !tiers[i] || tiers[i] === stuTier);
+      return {
+        stu,
+        answers: visibleIdxs.map((i) => {
+          const q = questions[i];
+          const kpIds = parseArr(q.kpIds);
+          // 以该生对应知识点的掌握度为正确概率（演示数据）
+          const kpMastery = Math.max(...kpIds.map((id) => masteryMap.get(stu.id)!.get(id) ?? 0.5));
+          const correct = rng() < kpMastery * 0.95;
+          let response = q.answer;
+          if (!correct) {
+            if (q.type === QuestionType.SINGLE_CHOICE) {
+              const qOpts = parseArr<string>(q.options);
+              response = pick(qOpts.filter((o) => o !== q.answer)) ?? "（空）";
+            } else {
+              response = String(Number(q.answer) + pick([-1, 1, 2, -2, 3])).trim();
+            }
           }
-        }
-        return { questionId: q.id, kpIds, correct, response };
-      }),
-    }));
+          return { questionId: q.id, kpIds, correct, response };
+        }),
+      };
+    });
 
     // 批量写入（createMany 提速）：先建 submission 再回查 id
     await prisma.submission.createMany({
@@ -583,6 +607,8 @@ async function main() {
         stems: mathStems,
         students: classStudents,
         masteryMap: mathMasteryMap,
+        // 分层演示：前 2 题基础层、中 2 题提升层、末题拓展层
+        tierByIndex: ["foundation", "foundation", "intermediate", "intermediate", "advanced"],
       }),
       await seedDemoAssignment({
         subjectId: chinese.id,

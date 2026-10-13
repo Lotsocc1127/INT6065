@@ -7,9 +7,19 @@
 import type { Question } from "@prisma/client";
 import { prisma } from "./prisma";
 import { parseArr, toArrStr, clamp } from "./json";
-import { updateMastery } from "./mastery";
+import { avg, tierOf, updateMastery, type Tier } from "./mastery";
 import { llmConfigured, llmJson } from "./llm";
 import { GRADE_SYSTEM } from "./prompts";
+
+/** 学生某科层级：该科各知识点掌握度平均 → tierOf（无数据视为基础层） */
+export async function studentTierOf(studentId: string, subjectId: string): Promise<Tier> {
+  const rows = await prisma.mastery.findMany({
+    where: { studentId, subjectId },
+    select: { value: true },
+  });
+  if (!rows.length) return "foundation";
+  return tierOf(avg(rows.map((r) => r.value)));
+}
 
 export interface AnswerInput {
   questionId: string;
@@ -141,7 +151,10 @@ export async function processSubmission(opts: {
   });
   if (existing) throw new SubmissionError("你已提交过该作业（演示版每人限提交一次）");
 
-  const qById = new Map(assignment.questions.map((aq) => [aq.question.id, aq.question]));
+  // 分层作业：仅可见该生层级（或全体）的题目
+  const myTier = await studentTierOf(opts.studentId, assignment.subjectId);
+  const visible = assignment.questions.filter((aq) => !aq.tier || aq.tier === myTier);
+  const qById = new Map(visible.map((aq) => [aq.question.id, aq.question]));
   const inputs = opts.answers.filter((a) => qById.has(a.questionId));
   if (!inputs.length) throw new SubmissionError("作答为空");
 

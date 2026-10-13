@@ -9,6 +9,12 @@ export const dynamic = "force-dynamic";
 
 const TYPES: string[] = Object.values(QuestionType);
 
+const TIER_VALUES = ["foundation", "intermediate", "advanced"];
+/** 层级白名单归一化：非法值一律 null（全体可见） */
+function normTier(v: unknown): string | null {
+  return typeof v === "string" && TIER_VALUES.includes(v) ? v : null;
+}
+
 interface GeneratedQuestion {
   stem: string;
   type: string;
@@ -17,6 +23,7 @@ interface GeneratedQuestion {
   analysis?: string | null;
   kpId: string;
   difficulty?: number;
+  tier?: string | null;
 }
 
 /** GET /api/assignments —— 作业列表（教师：全部；学生：本班 + 自己的提交状态） */
@@ -38,6 +45,7 @@ export async function GET(req: NextRequest) {
       include: {
         subject: true,
         class: true,
+        questions: { select: { tier: true } },
         _count: { select: { questions: true, submissions: true } },
       },
     });
@@ -66,6 +74,7 @@ export async function GET(req: NextRequest) {
         createdAt: a.createdAt,
         questionCount: a._count.questions,
         submissionCount: a._count.submissions,
+        tiered: a.questions.some((q) => q.tier),
         mySubmissionId: mySubmissions.get(a.id) ?? null,
       }))
     );
@@ -93,29 +102,39 @@ export async function POST(req: NextRequest) {
 
     const assignmentType = type === "QUIZ" ? AssignmentType.QUIZ : AssignmentType.HOMEWORK;
 
-    // 支持同时提交：已有题目 id + AI 生成的新题目（先入库）
-    let ids: string[] = [...(questionIds ?? [])];
+    // 支持同时提交：已有题目 id（可带层级）+ AI 生成的新题目（先入库，逐条建以取回 id）
+    const rawIds: unknown[] = Array.isArray(questionIds) ? questionIds : [];
+    const items: { questionId: string; tier: string | null }[] = rawIds
+      .map((q) =>
+        typeof q === "string"
+          ? { questionId: q, tier: null }
+          : q && typeof q === "object"
+            ? {
+                questionId: String((q as { id?: unknown }).id ?? ""),
+                tier: normTier((q as { tier?: unknown }).tier),
+              }
+            : null
+      )
+      .filter((q): q is { questionId: string; tier: string | null } => Boolean(q && q.questionId));
+
     if (questions?.length) {
-      const created = await prisma.question.createMany({
-        data: questions.map((q) => ({
-          subjectId,
-          kpIds: toArrStr(q.kpId ? [q.kpId] : []),
-          type: (TYPES.includes(q.type) ? q.type : "FILL_BLANK") as QuestionType,
-          difficulty: Math.min(5, Math.max(1, Math.round(Number(q.difficulty) || 2))),
-          stem: q.stem,
-          options: q.options?.length ? toArrStr(q.options) : null,
-          answer: q.answer,
-          analysis: q.analysis ?? null,
-        })),
-      });
-      const newQuestions = await prisma.question.findMany({
-        where: { subjectId },
-        orderBy: { id: "desc" },
-        take: created.count,
-      });
-      ids = [...ids, ...newQuestions.map((q) => q.id)];
+      for (const q of questions) {
+        const created = await prisma.question.create({
+          data: {
+            subjectId,
+            kpIds: toArrStr(q.kpId ? [q.kpId] : []),
+            type: (TYPES.includes(q.type) ? q.type : "FILL_BLANK") as QuestionType,
+            difficulty: Math.min(5, Math.max(1, Math.round(Number(q.difficulty) || 2))),
+            stem: q.stem,
+            options: q.options?.length ? toArrStr(q.options) : null,
+            answer: q.answer,
+            analysis: q.analysis ?? null,
+          },
+        });
+        items.push({ questionId: created.id, tier: normTier(q.tier) });
+      }
     }
-    if (!ids.length) return ok({ error: "至少选择一道题" }, 400);
+    if (!items.length) return ok({ error: "至少选择一道题" }, 400);
 
     const assignment = await prisma.assignment.create({
       data: {
@@ -125,7 +144,11 @@ export async function POST(req: NextRequest) {
         classId,
         dueAt: dueAt ? new Date(dueAt) : null,
         questions: {
-          create: ids.map((questionId, i) => ({ questionId, order: i + 1 })),
+          create: items.map((it, i) => ({
+            questionId: it.questionId,
+            order: i + 1,
+            tier: it.tier,
+          })),
         },
       },
     });

@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api";
 import { requireApiUser } from "@/lib/auth";
 import { parseArr } from "@/lib/json";
+import { studentTierOf } from "@/lib/grading";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -43,7 +44,15 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     // 题目答案/解析：教师始终可见；学生仅在提交后可见（防止提前看答案）
     const reveal = session.user.role !== "STUDENT" || Boolean(mySubmission);
 
-    const kpIds = [...new Set(assignment.questions.flatMap((aq) => parseArr(aq.question.kpIds)))];
+    // 分层作业：学生仅可见自己层级（或全体）的题目
+    let myTier: string | null = null;
+    let visibleQuestions = assignment.questions;
+    if (session.user.role === "STUDENT") {
+      myTier = await studentTierOf(session.user.id, assignment.subjectId);
+      visibleQuestions = assignment.questions.filter((aq) => !aq.tier || aq.tier === myTier);
+    }
+
+    const kpIds = [...new Set(visibleQuestions.flatMap((aq) => parseArr(aq.question.kpIds)))];
     const kps = await prisma.knowledgePoint.findMany({ where: { id: { in: kpIds } } });
     const kpById = new Map(kps.map((k) => [k.id, k]));
 
@@ -93,9 +102,10 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
           where: { role: "STUDENT", classId: assignment.classId },
         }),
       },
-      questions: assignment.questions.map((aq) => ({
+      questions: visibleQuestions.map((aq) => ({
         id: aq.question.id,
         order: aq.order,
+        tier: aq.tier,
         type: aq.question.type,
         difficulty: aq.question.difficulty,
         stem: aq.question.stem,
@@ -106,6 +116,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
           .filter(Boolean),
         ...(reveal ? { answer: aq.question.answer, analysis: aq.question.analysis } : {}),
       })),
+      myTier,
       mySubmission: mySubmission
         ? {
             id: mySubmission.id,

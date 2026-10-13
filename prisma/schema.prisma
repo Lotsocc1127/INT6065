@@ -107,6 +107,8 @@ model AssignmentQuestion {
   assignmentId String
   questionId   String
   order        Int
+  // 分层作业：null = 全体可见；foundation / intermediate / advanced = 仅该层级学生可见
+  tier         String?
   question     Question   @relation(fields: [questionId], references: [id])
   assignment   Assignment @relation(fields: [assignmentId], references: [id])
 

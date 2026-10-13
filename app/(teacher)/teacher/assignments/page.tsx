@@ -31,6 +31,7 @@ interface AssignmentRow {
   createdAt: string;
   questionCount: number;
   submissionCount: number;
+  tiered: boolean;
 }
 
 export default function TeacherAssignmentsPage() {
@@ -81,9 +82,14 @@ export default function TeacherAssignmentsPage() {
                   <TableCell className="font-medium">{a.title}</TableCell>
                   <TableCell>{a.subjectName}</TableCell>
                   <TableCell>
-                    <Badge variant={a.type === "QUIZ" ? "secondary" : "outline"}>
-                      {a.type === "QUIZ" ? "测验" : "作业"}
-                    </Badge>
+                    <div className="flex gap-1.5">
+                      <Badge variant={a.type === "QUIZ" ? "secondary" : "outline"}>
+                        {a.type === "QUIZ" ? "测验" : "作业"}
+                      </Badge>
+                      {a.tiered ? (
+                        <Badge className="bg-amber-100 text-amber-800">分层</Badge>
+                      ) : null}
+                    </div>
                   </TableCell>
                   <TableCell>{a.className}</TableCell>
                   <TableCell>{a.dueAt ? fmtDate(a.dueAt) : "—"}</TableCell>

@@ -72,6 +72,7 @@ interface GenQuestion {
   analysis: string;
   kpId: string;
   difficulty: number;
+  tier: string | null;
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -96,6 +97,7 @@ export default function NewAssignmentPage() {
   const [dueAt, setDueAt] = useState("");
   // 选题
   const [selected, setSelected] = useState<Map<string, BankQuestion>>(new Map());
+  const [bankTier, setBankTier] = useState<Record<string, string | null>>({});
   const [generated, setGenerated] = useState<GenQuestion[]>([]);
   // 题库过滤
   const [kpFilter, setKpFilter] = useState("all");
@@ -175,6 +177,34 @@ export default function NewAssignmentPage() {
     });
   };
 
+  /** 层级下拉（全体 = 所有层级学生可见） */
+  function TierSelect({
+    value,
+    onChange,
+  }: {
+    value: string | null;
+    onChange: (v: string | null) => void;
+  }) {
+    return (
+      <Select
+        value={value ?? "all"}
+        onValueChange={(v) => onChange(v === "all" ? null : v)}
+      >
+        <SelectTrigger className="w-32">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">全体可见</SelectItem>
+          {(Object.keys(TIER_META) as Tier[]).map((t) => (
+            <SelectItem key={t} value={t}>
+              仅{TIER_META[t].short}层
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    );
+  }
+
   function changeSubject(code: string) {
     setSubject(code);
     // 已选题 / AI 结果属于旧科目，切换科目后清空
@@ -200,7 +230,9 @@ export default function NewAssignmentPage() {
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error ?? "生成失败");
-      setAiResult(j.questions ?? []);
+      // 本次生成批次默认标注为所选层级（采纳后可逐题修改）
+      const list = (Array.isArray(j.questions) ? j.questions : []) as GenQuestion[];
+      setAiResult(list.map((q) => ({ ...q, tier: aiTier })));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "生成失败");
     } finally {
@@ -228,7 +260,7 @@ export default function NewAssignmentPage() {
           subjectId: subjects.find((s) => s.code === subject)?.id,
           classId,
           dueAt: dueAt ? new Date(dueAt).toISOString() : undefined,
-          questionIds: [...selected.keys()],
+          questionIds: [...selected.keys()].map((id) => ({ id, tier: bankTier[id] ?? null })),
           questions: generated,
         }),
       });
@@ -361,6 +393,15 @@ export default function NewAssignmentPage() {
                   setGenerated((prev) => prev.map((x, x2) => (x2 === i ? { ...x, stem: e.target.value } : x)))
                 }
               />
+              <div className="mb-2 space-y-1.5">
+                <Label className="text-xs text-muted-foreground">适用层级（分层作业：只对所选层级学生可见）</Label>
+                <TierSelect
+                  value={g.tier ?? null}
+                  onChange={(v) =>
+                    setGenerated((prev) => prev.map((x, x2) => (x2 === i ? { ...x, tier: v } : x)))
+                  }
+                />
+              </div>
               {g.type === "SINGLE_CHOICE" ? (
                 <div className="mb-2 space-y-1.5">
                   <Label className="text-xs text-muted-foreground">选项（A-D）</Label>
@@ -414,9 +455,9 @@ export default function NewAssignmentPage() {
             </div>
           ))}
           {[...selected.values()].map((q) => (
-            <div key={q.id} className="flex items-start gap-2 rounded-lg border p-3 text-sm">
-              <div className="flex-1">
-                <div className="mb-1 flex gap-2">
+            <div key={q.id} className="flex items-start gap-3 rounded-lg border p-3 text-sm">
+              <div className="min-w-0 flex-1">
+                <div className="mb-1 flex flex-wrap gap-2">
                   <Badge variant="outline">{TYPE_LABEL[q.type] ?? q.type}</Badge>
                   <Badge variant="outline">难度 {q.difficulty}</Badge>
                   {q.kpCodes.map((c) => (
@@ -427,9 +468,20 @@ export default function NewAssignmentPage() {
                 </div>
                 <div>{q.stem}</div>
               </div>
-              <Button variant="ghost" size="sm" onClick={() => toggleSelect(q)} className="text-destructive">
-                <Trash2 className="h-4 w-4" />
-              </Button>
+              <div className="flex shrink-0 flex-col items-end gap-1.5">
+                <TierSelect
+                  value={bankTier[q.id] ?? null}
+                  onChange={(v) => setBankTier((p) => ({ ...p, [q.id]: v }))}
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => toggleSelect(q)}
+                  className="text-destructive"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           ))}
         </CardContent>
@@ -558,7 +610,7 @@ export default function NewAssignmentPage() {
           </DialogHeader>
           <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-2">
-              <Label>难度层级</Label>
+              <Label>生成层级（题目仅该层级学生可见）</Label>
               <Select value={aiTier} onValueChange={(v) => setAiTier(v as Tier)}>
                 <SelectTrigger>
                   <SelectValue />
@@ -609,6 +661,9 @@ export default function NewAssignmentPage() {
                   <div className="mb-1 flex gap-2">
                     <Badge variant="outline">{TYPE_LABEL[q.type] ?? q.type}</Badge>
                     <Badge variant="outline">难度 {q.difficulty}</Badge>
+                    {q.tier ? (
+                      <Badge variant="secondary">仅{TIER_META[q.tier as Tier].short}层</Badge>
+                    ) : null}
                   </div>
                   <div>{q.stem}</div>
                   {q.type === "SINGLE_CHOICE" && q.options?.length ? (

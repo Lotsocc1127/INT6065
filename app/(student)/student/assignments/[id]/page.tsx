@@ -13,6 +13,7 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { fmtDate, fmtDuration, pct } from "@/lib/utils";
+import { TIER_META, type Tier } from "@/lib/mastery";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,7 @@ interface DetailData {
     dueAt: string | null;
   };
   questions: QuestionRow[];
+  myTier: string | null;
   mySubmission: {
     id: string;
     submittedAt: string;
@@ -159,6 +161,11 @@ export default function StudentAssignmentPage({ params }: { params: { id: string
         <Badge variant={data.assignment.type === "QUIZ" ? "secondary" : "outline"}>
           {data.assignment.type === "QUIZ" ? "测验" : "作业"}
         </Badge>
+        {data.myTier ? (
+          <Badge className="bg-[#1c5cab]">
+            我的层级：{TIER_META[data.myTier as Tier].label}
+          </Badge>
+        ) : null}
         <span className="text-sm text-muted-foreground">
           {data.assignment.subjectName} · {fmtDate(data.assignment.dueAt)} 截止
         </span>
