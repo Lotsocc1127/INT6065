@@ -193,7 +193,7 @@ export default function AssignmentDetailPage({ params }: { params: { id: string 
                 <span className="text-xs text-muted-foreground">{fmtDateTime(s.submittedAt)}</span>
                 {s.avgScore != null ? (
                   <Badge variant={s.avgScore >= 0.8 ? "default" : s.avgScore >= 0.6 ? "secondary" : "destructive"}>
-                    均分 {pct(s.avgScore)}
+                    得分率 {pct(s.avgScore)}
                   </Badge>
                 ) : (
                   <Badge variant="outline">待批改</Badge>

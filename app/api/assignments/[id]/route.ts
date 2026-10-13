@@ -59,9 +59,13 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
         studentId: s.studentId,
         studentName: s.student.name,
         submittedAt: s.submittedAt,
-        avgScore: s.answers.length
-          ? s.answers.reduce((acc, a) => acc + (a.score ?? 0), 0) / s.answers.length
-          : null,
+        avgScore: (() => {
+          // 只统计已批改的题目；全部未批改时显示「待批改」
+          const scored = s.answers.filter((a) => a.score != null);
+          return scored.length
+            ? scored.reduce((acc, a) => acc + (a.score ?? 0), 0) / scored.length
+            : null;
+        })(),
         answers: s.answers.map((a) => ({
           questionId: a.questionId,
           response: a.response,
