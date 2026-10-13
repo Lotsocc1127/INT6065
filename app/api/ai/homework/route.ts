@@ -8,6 +8,26 @@ import type { Tier } from "@/lib/mastery";
 
 export const dynamic = "force-dynamic";
 
+/** 移除 AI 输出中常见的 LaTeX 标记，数学符号转普通文本（防止页面乱码） */
+function stripLatex(s: string): string {
+  return s
+    .replace(/\$\$?/g, "") // $...$ 定界符
+    .replace(/\\[\(\[]|\\[\)\]]/g, "") // \( \) \[ \]
+    .replace(/\\(frac|dfrac)\{([^{}]*)\}\{([^{}]*)\}/g, "($2)/($3)")
+    .replace(/\\sqrt\{([^{}]*)\}/g, "√($1)")
+    .replace(/\\times/g, "×")
+    .replace(/\\div/g, "÷")
+    .replace(/\\cdot/g, "·")
+    .replace(/\\pm/g, "±")
+    .replace(/\\leq/g, "≤")
+    .replace(/\\geq/g, "≥")
+    .replace(/\\neq|\\ne/g, "≠")
+    .replace(/\\angle/g, "∠")
+    .replace(/\\circ/g, "°")
+    .replace(/\\prime/g, "′")
+    .replace(/\\(overline|overleftrightarrow|mathrm|mathbf|textit|text)\{([^{}]*)\}/g, "$2");
+}
+
 /** POST /api/ai/homework —— AI 分层作业生成（7.2）：{subjectCode, kpCodes?, tier, count} */
 export async function POST(req: NextRequest) {
   try {
@@ -59,15 +79,17 @@ export async function POST(req: NextRequest) {
     const kpByCode = new Map(kps.map((k) => [k.code, k]));
     const questions = (Array.isArray(result?.questions) ? result.questions : [])
       .filter((q) => q?.stem && q?.answer)
+      // 选择题必须带选项，否则无法作答，直接丢弃（全部无效时返回 502）
+      .filter((q) => q.type !== "SINGLE_CHOICE" || (Array.isArray(q.options) && q.options.length >= 2))
       .slice(0, count)
       .map((q) => ({
-        stem: q.stem,
+        stem: stripLatex(q.stem),
         type: ["SINGLE_CHOICE", "FILL_BLANK", "OPEN_RESPONSE"].includes(q.type)
           ? q.type
           : "FILL_BLANK",
-        options: Array.isArray(q.options) && q.type === "SINGLE_CHOICE" ? q.options.slice(0, 4) : null,
-        answer: q.answer,
-        analysis: q.analysis ?? "",
+        options: Array.isArray(q.options) && q.type === "SINGLE_CHOICE" ? q.options.slice(0, 4).map(stripLatex) : null,
+        answer: stripLatex(q.answer),
+        analysis: stripLatex(q.analysis ?? ""),
         kpId: kpByCode.get(q.kpCode)?.id ?? kps[0].id,
         difficulty: Math.min(5, Math.max(1, Math.round(Number(q.difficulty) || 2))),
       }));

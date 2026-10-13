@@ -360,6 +360,32 @@ export default function NewAssignmentPage() {
                   setGenerated((prev) => prev.map((x, x2) => (x2 === i ? { ...x, stem: e.target.value } : x)))
                 }
               />
+              {g.type === "SINGLE_CHOICE" ? (
+                <div className="mb-2 space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">选项（A-D）</Label>
+                  {(g.options ?? []).map((o, oi) => (
+                    <Input
+                      key={oi}
+                      className="text-sm"
+                      value={o}
+                      onChange={(e) =>
+                        setGenerated((prev) =>
+                          prev.map((x, x2) =>
+                            x2 === i
+                              ? {
+                                  ...x,
+                                  options: (x.options ?? []).map((v, vi) =>
+                                    vi === oi ? e.target.value : v
+                                  ),
+                                }
+                              : x
+                          )
+                        )
+                      }
+                    />
+                  ))}
+                </div>
+              ) : null}
               <div className="grid gap-2 text-sm md:grid-cols-2">
                 <div className="space-y-1">
                   <Label className="text-xs text-muted-foreground">答案</Label>
@@ -486,7 +512,18 @@ export default function NewAssignmentPage() {
                         className="h-4 w-4 accent-foreground"
                       />
                     </TableCell>
-                    <TableCell className="max-w-md">{q.stem}</TableCell>
+                    <TableCell className="max-w-md">
+                      {q.stem}
+                      {q.type === "SINGLE_CHOICE" && q.options.length ? (
+                        <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                          {q.options.map((o, oi) => (
+                            <div key={oi}>
+                              {String.fromCharCode(65 + oi)}. {o}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </TableCell>
                     <TableCell>{TYPE_LABEL[q.type] ?? q.type}</TableCell>
                     <TableCell>{q.kpCodes.join("、")}</TableCell>
                     <TableCell className="text-right tabular-nums">{q.difficulty}</TableCell>
@@ -573,6 +610,15 @@ export default function NewAssignmentPage() {
                     <Badge variant="outline">难度 {q.difficulty}</Badge>
                   </div>
                   <div>{q.stem}</div>
+                  {q.type === "SINGLE_CHOICE" && q.options?.length ? (
+                    <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                      {q.options.map((o, oi) => (
+                        <div key={oi}>
+                          {String.fromCharCode(65 + oi)}. {o}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                   <div className="mt-1 text-xs text-muted-foreground">答案：{q.answer}</div>
                   <div className="text-xs text-muted-foreground">解析：{q.analysis}</div>
                 </div>

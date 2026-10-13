@@ -26,7 +26,10 @@ export function homeworkPrompt(opts: {
 题目数量：${opts.count} 道
 
 要求：
-- 题目类型可混合使用：SINGLE_CHOICE（选择题，4 个选项）、FILL_BLANK（填空题）、OPEN_RESPONSE（解答题）。
+- 题目类型可混合使用：SINGLE_CHOICE（选择题）、FILL_BLANK（填空题）、OPEN_RESPONSE（解答题）。
+- SINGLE_CHOICE 的 options 必须恰好是 4 个选项字符串，绝不允许为 null 或空数组。
+- 所有文字一律使用普通文本字符：数学符号用 + - × ÷ = ² ³ ° ∠ √ ≤ ≥ 等普通字符，分数写作 (a+b)/c 形式。
+  严禁使用 LaTeX（\\frac、\\sqrt、\\times 等反斜杠命令）、美元符号定界符（\$）、数学花体/斜体 Unicode 字符。
 - 保证题目学科内容正确、答案唯一，难度与"${tierMeta.label}"层级匹配。
 - 每题需给出标准答案与简练解析。
 - 难度用 1-5 整数表示：1-2 对应基础巩固，3 对应能力提升，4-5 对应拓展探究。
