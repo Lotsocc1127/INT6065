@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SubjectSwitcher, type SubjectInfo } from "@/components/app/subject-switcher";
+import { QuoteCard } from "@/components/app/quote-card";
 import { fmtDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -58,8 +59,9 @@ function TaskCenter() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <SubjectSwitcher subjects={subjects} current={subject} />
+        <QuoteCard className="max-w-md flex-1" />
       </div>
       {error ? <p className="text-destructive">{error}</p> : null}
       {!list && !error ? <Skeleton className="h-64" /> : null}

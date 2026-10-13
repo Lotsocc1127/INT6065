@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EChart } from "@/components/charts/echart";
+import { EmptyState } from "@/components/app/empty-state";
 import { hbarOption } from "@/lib/charts";
 import { fmtDate, fmtDateTime, fmtDuration, pct } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -279,7 +280,7 @@ export default function AssignmentDetailPage({ params }: { params: { id: string 
               );
             })}
             {!data.submissions.length ? (
-              <p className="text-sm text-muted-foreground">暂无学生提交。</p>
+              <EmptyState title="暂无学生提交" hint="学生提交后，此处可按学生切换查看作答与个性化分析。" />
             ) : null}
           </div>
         </CardHeader>

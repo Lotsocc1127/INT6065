@@ -32,36 +32,40 @@ export function StudentNav() {
   const pathname = usePathname();
   return (
     <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
-      <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-3 px-4 md:px-6">
-        <div className="flex min-w-0 items-center gap-3">
+      <div className="mx-auto max-w-7xl px-4 md:px-6">
+        {/* 第一行：品牌 + 右侧操作 */}
+        <div className="flex h-12 items-center justify-between gap-3">
           <Link href="/student" className="flex shrink-0 items-center gap-2">
-            <BrandLogo size={30} />
-            <span className="hidden text-lg font-bold tracking-tight md:inline">智学慧教</span>
-            <span className="rounded bg-primary px-1.5 py-0.5 text-xs text-primary-foreground">学生端</span>
+            <BrandLogo size={28} />
+            <span className="text-lg font-bold tracking-tight">智学慧教</span>
+            <span className="rounded bg-primary px-1.5 py-0.5 text-xs text-primary-foreground">
+              学生端
+            </span>
           </Link>
-          <nav className="flex items-center gap-0.5 overflow-x-auto">
-            {LINKS.map((l) => (
-              <Link
-                key={l.href}
-                href={l.href}
-                className={cn(
-                  "flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-sm transition-colors hover:bg-accent",
-                  pathname === l.href
-                    ? "bg-accent font-medium text-accent-foreground"
-                    : "text-muted-foreground"
-                )}
-              >
-                <l.icon className="h-4 w-4 shrink-0" />
-                {l.label}
-              </Link>
-            ))}
-          </nav>
+          <div className="flex shrink-0 items-center gap-2">
+            <GovernanceModal />
+            <SettingsMenu />
+            <UserNav />
+          </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <GovernanceModal />
-          <SettingsMenu />
-          <UserNav />
-        </div>
+        {/* 第二行：导航横向铺开 */}
+        <nav className="flex items-center gap-1 overflow-x-auto pb-2">
+          {LINKS.map((l) => (
+            <Link
+              key={l.href}
+              href={l.href}
+              className={cn(
+                "flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent",
+                pathname === l.href
+                  ? "bg-accent font-medium text-accent-foreground"
+                  : "text-muted-foreground"
+              )}
+            >
+              <l.icon className="h-4 w-4 shrink-0" />
+              {l.label}
+            </Link>
+          ))}
+        </nav>
       </div>
     </header>
   );

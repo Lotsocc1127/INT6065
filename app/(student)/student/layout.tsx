@@ -12,10 +12,10 @@ export default async function StudentLayout({ children }: { children: React.Reac
   return (
     <div className="min-h-screen bg-muted/30">
       <StudentNav />
-      <main className="mx-auto max-w-5xl p-4 md:p-6">
+      <main className="mx-auto max-w-7xl p-4 md:p-6">
         <PageTransition>{children}</PageTransition>
       </main>
-      <footer className="mx-auto max-w-5xl px-4 pb-4 text-center text-xs text-muted-foreground">
+      <footer className="mx-auto max-w-7xl px-4 pb-4 text-center text-xs text-muted-foreground">
         智学慧教 · 制作组 Six gods
       </footer>
     </div>

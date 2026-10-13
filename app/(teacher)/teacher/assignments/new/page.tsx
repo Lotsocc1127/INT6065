@@ -35,6 +35,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { TIER_META, type Tier } from "@/lib/mastery";
+import { EmptyState } from "@/components/app/empty-state";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -531,8 +532,8 @@ export default function NewAssignmentPage() {
                 ))}
                 {!bank.length ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
-                      没有符合条件的题目
+                    <TableCell colSpan={5} className="p-0">
+                      <EmptyState title="没有符合条件的题目" hint="试试调整筛选条件，或使用「AI 分层出题」生成新题目。" />
                     </TableCell>
                   </TableRow>
                 ) : null}

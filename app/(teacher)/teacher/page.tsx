@@ -18,6 +18,7 @@ import {
 import { EChart } from "@/components/charts/echart";
 import { StatCard } from "@/components/app/stat-card";
 import { SubjectSwitcher, type SubjectInfo } from "@/components/app/subject-switcher";
+import { QuoteCard } from "@/components/app/quote-card";
 import { TierBadge, TierLegend } from "@/components/app/tier-badge";
 import { hbarOption, heatmapOption, lineOption } from "@/lib/charts";
 import { TIER_META, type Tier } from "@/lib/mastery";
@@ -158,6 +159,8 @@ function DashboardInner() {
           </Select>
         ) : null}
       </div>
+
+      <QuoteCard />
 
       {error ? (
         <Card>

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/app/empty-state";
 import {
   Table,
   TableBody,
@@ -100,8 +101,8 @@ export default function TeacherAssignmentsPage() {
               ))}
               {!list.length ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
-                    还没有作业，点击右上角「布置作业」开始。
+                  <TableCell colSpan={8} className="p-0">
+                    <EmptyState title="还没有作业" hint="点击右上角「布置作业」，从题库选题或用 AI 分层出题。" />
                   </TableCell>
                 </TableRow>
               ) : null}

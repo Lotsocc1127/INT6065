@@ -62,6 +62,9 @@ async function main() {
   const teacher = await prisma.user.create({
     data: { name: "王老师", role: Role.TEACHER, password: passwordHash },
   });
+  // 额外两名测试教师
+  await prisma.user.create({ data: { name: "李老师", role: Role.TEACHER, password: passwordHash } });
+  await prisma.user.create({ data: { name: "张老师", role: Role.TEACHER, password: passwordHash } });
   const admin = await prisma.user.create({
     data: { name: "管理员", role: Role.ADMIN, password: passwordHash },
   });
@@ -108,8 +111,16 @@ async function main() {
       students.push(stu);
     }
   }
-  // 七年级(3)班：固定演示名单
+  // 七年级(3)班：固定演示名单 + 生成 20 名补齐至 30 人
   await createStudents(cls.id, studentProfiles);
+  {
+    const used3 = new Set<string>();
+    const more3 = Array.from({ length: 20 }, () => ({
+      name: genName(used3),
+      base: Math.round((0.3 + rng() * 0.6) * 100) / 100,
+    }));
+    await createStudents(cls.id, more3);
+  }
   // 七年级(1)/(2)班：各 30 名生成学生，基础画像在 0.3-0.9 均匀分布
   for (const big of [cls1, cls2]) {
     const used = new Set<string>();
@@ -602,10 +613,10 @@ async function main() {
   }
 
   console.log("种子完成：");
-  console.log(`  教师：${teacher.name}`);
+  console.log(`  教师：${teacher.name}、李老师、张老师`);
   console.log(`  管理员：${admin.name}`);
   console.log(
-    `  班级：${cls1.name}（30 人）、${cls2.name}（30 人）、${cls.name}（10 人），共 ${students.length} 名学生`
+    `  班级：${cls1.name}（30 人）、${cls2.name}（30 人）、${cls.name}（30 人），共 ${students.length} 名学生`
   );
   console.log(`  数学：${mathKpDefs.length} 个知识点，${mathQuestions.length} 道题`);
   console.log(`  英语：${engKpDefs.length} 个知识点，${englishQuestions.length} 道题`);

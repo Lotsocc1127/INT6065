@@ -32,6 +32,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { EmptyState } from "@/components/app/empty-state";
 
 export const dynamic = "force-dynamic";
 
@@ -273,8 +274,8 @@ export default function TeacherStudentsPage() {
                 ))}
                 {!students.length ? (
                   <TableRow>
-                    <TableCell colSpan={3} className="py-8 text-center text-muted-foreground">
-                      该班级暂无学生，使用上方表单添加。
+                    <TableCell colSpan={3} className="p-0">
+                      <EmptyState title="该班级暂无学生" hint="使用上方表单添加学生账号。" />
                     </TableCell>
                   </TableRow>
                 ) : null}
