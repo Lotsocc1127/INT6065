@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SubjectSwitcher, type SubjectInfo } from "@/components/app/subject-switcher";
-import { cn, pct } from "@/lib/utils";
+import { cn, masteryTextColor, pct } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -84,7 +84,9 @@ function LearningPath() {
                         <span
                           className={cn(
                             "absolute -left-[31px] flex h-5 w-5 items-center justify-center rounded-full border-2 bg-background text-[10px] font-semibold",
-                            isNext ? "border-primary text-primary" : "border-border text-muted-foreground"
+                            isNext
+                              ? "border-blue-500 bg-blue-500 text-white"
+                              : "border-border text-muted-foreground"
                           )}
                         >
                           {i + 1}
@@ -92,7 +94,7 @@ function LearningPath() {
                         <div
                           className={cn(
                             "rounded-lg border p-3",
-                            isNext && "border-primary bg-accent/40"
+                            isNext && "border-blue-500/60 bg-blue-50/60"
                           )}
                         >
                           <div className="flex flex-wrap items-center gap-2">
@@ -104,16 +106,21 @@ function LearningPath() {
                                 <CheckCircle2 className="h-3 w-3" /> 已掌握
                               </Badge>
                             ) : isNext ? (
-                              <Badge>下一步 · 建议优先</Badge>
+                              <Badge className="bg-[#1c5cab]">下一步 · 建议优先</Badge>
                             ) : (
-                              <Badge variant="secondary">待学习</Badge>
+                              <Badge className="bg-amber-100 text-amber-800">待学习</Badge>
                             )}
                             {item.prereqIds.length ? (
                               <span className="text-xs text-muted-foreground">
                                 前置：{item.prereqIds.length} 个知识点
                               </span>
                             ) : null}
-                            <span className="ml-auto text-sm tabular-nums text-muted-foreground">
+                            <span
+                              className={cn(
+                                "ml-auto text-sm font-medium tabular-nums",
+                                masteryTextColor(item.mastery)
+                              )}
+                            >
                               {pct(item.mastery)}
                             </span>
                           </div>

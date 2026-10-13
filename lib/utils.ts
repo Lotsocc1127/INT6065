@@ -11,6 +11,13 @@ export function pct(v: number | null | undefined, digits = 0): string {
   return `${(v * 100).toFixed(digits)}%`;
 }
 
+/** 掌握度数值配色（柔和不刺眼）：绿=达标 ≥80%，蓝=进阶中 ≥50%，琥珀=待提升 */
+export function masteryTextColor(v: number): string {
+  if (v >= 0.8) return "text-emerald-600";
+  if (v >= 0.5) return "text-blue-600";
+  return "text-amber-600";
+}
+
 /** 毫秒 → 可读用时 */
 export function fmtDuration(ms: number | null | undefined): string {
   if (ms == null) return "—";

@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EChart } from "@/components/charts/echart";
 import { SubjectSwitcher, type SubjectInfo } from "@/components/app/subject-switcher";
 import { radarOption } from "@/lib/charts";
-import { pct } from "@/lib/utils";
+import { cn, masteryTextColor, pct } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -97,7 +97,7 @@ function KnowledgeMap() {
                   <CardHeader>
                     <CardTitle className="text-base">
                       {k.code} {k.name}
-                      <span className="ml-2 text-sm font-normal tabular-nums text-muted-foreground">
+                      <span className={cn("ml-2 text-sm font-semibold tabular-nums", masteryTextColor(v))}>
                         {pct(v)}
                       </span>
                     </CardTitle>
