@@ -62,6 +62,9 @@ async function main() {
   const teacher = await prisma.user.create({
     data: { name: "王老师", role: Role.TEACHER, password: passwordHash },
   });
+  const admin = await prisma.user.create({
+    data: { name: "管理员", role: Role.ADMIN, password: passwordHash },
+  });
   const cls = await prisma.class.create({
     data: { name: "七年级(3)班" },
   });
@@ -539,6 +542,7 @@ async function main() {
 
   console.log("种子完成：");
   console.log(`  教师：${teacher.name}`);
+  console.log(`  管理员：${admin.name}`);
   console.log(`  班级：${cls.name}（${students.length} 名学生）`);
   console.log(`  数学：${mathKpDefs.length} 个知识点，${mathQuestions.length} 道题`);
   console.log(`  英语：${engKpDefs.length} 个知识点，${englishQuestions.length} 道题`);

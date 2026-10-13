@@ -32,7 +32,8 @@ export function LoginForm({ users }: { users: DemoUser[] }) {
   const [password, setPassword] = useState("123456");
   const [loading, setLoading] = useState(false);
 
-  const teachers = users.filter((u) => u.role !== "STUDENT");
+  const admins = users.filter((u) => u.role === "ADMIN");
+  const teachers = users.filter((u) => u.role === "TEACHER");
   const students = users.filter((u) => u.role === "STUDENT");
 
   async function onSubmit(e: React.FormEvent) {
@@ -49,7 +50,7 @@ export function LoginForm({ users }: { users: DemoUser[] }) {
       return;
     }
     const role = users.find((u) => u.id === userId)?.role;
-    router.push(role === "STUDENT" ? "/student" : "/teacher");
+    router.push(role === "STUDENT" ? "/student" : role === "ADMIN" ? "/admin" : "/teacher");
     router.refresh();
   }
 
@@ -69,6 +70,14 @@ export function LoginForm({ users }: { users: DemoUser[] }) {
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
+                  <SelectLabel>管理员</SelectLabel>
+                  {admins.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+                <SelectGroup>
                   <SelectLabel>教师</SelectLabel>
                   {teachers.map((u) => (
                     <SelectItem key={u.id} value={u.id}>
@@ -77,10 +86,11 @@ export function LoginForm({ users }: { users: DemoUser[] }) {
                   ))}
                 </SelectGroup>
                 <SelectGroup>
-                  <SelectLabel>学生（七年级(3)班）</SelectLabel>
+                  <SelectLabel>学生</SelectLabel>
                   {students.map((u) => (
                     <SelectItem key={u.id} value={u.id}>
                       {u.name}
+                      {u.className ? `（${u.className}）` : ""}
                     </SelectItem>
                   ))}
                 </SelectGroup>
