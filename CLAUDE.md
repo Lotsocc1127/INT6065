@@ -17,6 +17,11 @@
   **Direct** 连接串（`prisma db push` / `db seed` 等 CLI 命令自动使用 Direct）
 - 建表/重灌：`npx prisma db push` + `npx prisma db seed`；已有数据时
   seed 会跳过，强制重灌用 `npx tsx prisma/seed.ts --force`
+- **禁止在 Pooled 连接上跑交互式事务**（`$transaction(async tx => ...)`）：
+  逐条查询往返慢，超 Prisma 默认 5s 事务超时后报 P2028
+  （Transaction not found / already closed）。写操作用**批量事务**
+  `$transaction([op1, op2])`（数组形式无 timeout 参数、不受 5s 交互式
+  超时限制），依赖数据先在事务外预读（参考 lib/grading.ts 的 processSubmission）
 - Windows 上跑 `npx prisma generate` 前**先停 dev server**（query engine
   DLL 被占用会报 EPERM）
 
@@ -27,6 +32,9 @@
   `couldn't be rendered statically because it used 'headers'`
 - ECharts 热力图数据项格式为 `[x轴索引, y轴索引, 值]`（本系统 x=知识点、
   y=学生），新增/修改图表时注意坐标顺序与 tooltip 读取顺序一致
+- ECharts **y 轴类目索引 0 渲染在图表底部**（索引向上递增）。要
+  「薄弱学生靠下」，学生数组需按平均掌握度**升序**排列（班级看板热力图
+  就是这么做的，见 `app/(teacher)/teacher/page.tsx` 的 displayStudents）
 
 ## 部署
 

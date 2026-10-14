@@ -84,11 +84,11 @@ function DashboardInner() {
       .catch((e) => setError(e.message));
   }, [subject, classId]);
 
-  // 热力图行：按分层筛选 + 平均掌握度降序（薄弱学生靠下，便于观察缺口）
+  // 热力图行：按分层筛选 + 平均掌握度升序（ECharts y 轴类目索引 0 渲染在底部，故薄弱学生靠下）
   const displayStudents = useMemo(() => {
     if (!data) return [];
     const list = tierFilter === "all" ? [...data.students] : data.students.filter((s) => s.tier === tierFilter);
-    list.sort((a, b) => b.avg - a.avg);
+    list.sort((a, b) => a.avg - b.avg);
     return list;
   }, [data, tierFilter]);
 

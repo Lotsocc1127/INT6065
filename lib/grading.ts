@@ -4,7 +4,7 @@
  * → 3. 按知识点聚合正确率更新掌握度（写 MasteryPoint）
  * → 4. 错题写入/更新错题本 → 5. 返回批改结果 + 最新掌握度
  */
-import type { Question } from "@prisma/client";
+import { Prisma, type Question } from "@prisma/client";
 import { prisma } from "./prisma";
 import { parseArr, toArrStr, clamp } from "./json";
 import { avg, tierOf, updateMastery, type Tier } from "./mastery";
@@ -127,12 +127,15 @@ export class SubmissionError extends Error {
 }
 
 /**
- * 处理一次提交（事务内）：
+ * 处理一次提交：
  * - 校验作业与权限，每人每作业仅可提交一次（演示规则）
  * - 逐题批改 → 写入 AnswerRecord / Submission
  * - 按知识点聚合本次得分率 → 掌握度加权更新 + MasteryPoint
  * - 错题（答错或得分 < 0.6）写入/更新错题本
  * - 返回批改结果与最新掌握度
+ *
+ * 写入用批量事务（依赖数据先在事务外预读）：
+ * Neon Pooled 连接跑交互式事务会因逐条往返超时（Prisma 默认 5s），报 P2028。
  */
 export async function processSubmission(opts: {
   assignmentId: string;
@@ -184,9 +187,25 @@ export async function processSubmission(opts: {
     }
   }
 
-  // 事务：写提交、更新掌握度、写错题
-  const result = await prisma.$transaction(async (tx) => {
-    const submission = await tx.submission.create({
+  // 事务前预读（Neon Pooled 连接不支持交互式事务：逐条查询往返慢，会超 Prisma 5s 事务超时并报
+  // P2028「Transaction not found / already closed」。这里先读出依赖数据，再用批量事务一次写入）
+  const kpIds = [...kpRates.keys()];
+  const wrongIds = graded
+    .filter((g) => g.isCorrect === false || (g.score != null && g.score < 0.6))
+    .map((g) => g.questionId);
+  const [prevRows, kpRows, wqRows] = await Promise.all([
+    prisma.mastery.findMany({ where: { studentId: opts.studentId, kpId: { in: kpIds } } }),
+    prisma.knowledgePoint.findMany({ where: { id: { in: kpIds } } }),
+    prisma.wrongQuestion.findMany({ where: { studentId: opts.studentId, questionId: { in: wrongIds } } }),
+  ]);
+  const prevMap = new Map(prevRows.map((r) => [r.kpId, r.value]));
+  const kpMap = new Map(kpRows.map((k) => [k.id, k]));
+  const wqMap = new Map(wqRows.map((w) => [w.questionId, w]));
+
+  // 批量事务：写提交、更新掌握度、写错题
+  const ops: Prisma.PrismaPromise<any>[] = [];
+  ops.push(
+    prisma.submission.create({
       data: {
         assignmentId: assignment.id,
         studentId: opts.studentId,
@@ -205,18 +224,16 @@ export async function processSubmission(opts: {
           })),
         },
       },
-    });
+    })
+  );
 
-    const masteryUpdates: Record<string, number> = {};
-    for (const [kpId, rate] of kpRates) {
-      const correctRate = rate.sum / rate.n;
-      const prev = await tx.mastery.findUnique({
-        where: { studentId_kpId: { studentId: opts.studentId, kpId } },
-      });
-      const next = updateMastery(prev?.value ?? 0.3, correctRate);
-      const kp = await tx.knowledgePoint.findUnique({ where: { id: kpId } });
-      if (!kp) continue;
-      const mastery = await tx.mastery.upsert({
+  const masteryUpdates: Record<string, number> = {};
+  for (const [kpId, rate] of kpRates) {
+    const kp = kpMap.get(kpId);
+    if (!kp) continue;
+    const next = updateMastery(prevMap.get(kpId) ?? 0.3, rate.sum / rate.n);
+    ops.push(
+      prisma.mastery.upsert({
         where: { studentId_kpId: { studentId: opts.studentId, kpId } },
         create: {
           studentId: opts.studentId,
@@ -229,36 +246,38 @@ export async function processSubmission(opts: {
           value: next,
           history: { create: { value: next } },
         },
-      });
-      masteryUpdates[kpId] = mastery.value;
-    }
+      })
+    );
+    masteryUpdates[kpId] = next;
+  }
 
-    for (const g of graded) {
-      const wrong = g.isCorrect === false || (g.score != null && g.score < 0.6);
-      if (!wrong) continue;
-      const kpIds = parseArr(qById.get(g.questionId)!.kpIds);
-      const existingWq = await tx.wrongQuestion.findUnique({
-        where: { studentId_questionId: { studentId: opts.studentId, questionId: g.questionId } },
-      });
-      if (existingWq) {
-        await tx.wrongQuestion.update({
+  for (const g of graded) {
+    const wrong = g.isCorrect === false || (g.score != null && g.score < 0.6);
+    if (!wrong) continue;
+    const kpIdsG = parseArr(qById.get(g.questionId)!.kpIds);
+    const existingWq = wqMap.get(g.questionId);
+    if (existingWq) {
+      ops.push(
+        prisma.wrongQuestion.update({
           where: { id: existingWq.id },
           data: { wrongCount: { increment: 1 }, lastWrongAt: new Date(), mastered: false },
-        });
-      } else {
-        await tx.wrongQuestion.create({
+        })
+      );
+    } else {
+      ops.push(
+        prisma.wrongQuestion.create({
           data: {
             studentId: opts.studentId,
             questionId: g.questionId,
-            kpIds: toArrStr(kpIds),
+            kpIds: toArrStr(kpIdsG),
             wrongCount: 1,
           },
-        });
-      }
+        })
+      );
     }
+  }
 
-    return { submission, masteryUpdates };
-  });
+  await prisma.$transaction(ops);
 
-  return { results: graded, mastery: result.masteryUpdates };
+  return { results: graded, mastery: masteryUpdates };
 }
