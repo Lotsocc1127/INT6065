@@ -293,7 +293,7 @@ export default function PrepPage() {
 
       {result ? (
         <Card>
-          <CardHeader className="flex-row items-center justify-between">
+          <CardHeader className="flex-row flex-wrap items-center justify-between gap-2">
             <CardTitle className="text-base">教案（可编辑）· {subjectName}</CardTitle>
             <Button variant="outline" size="sm" onClick={copy} className="gap-1.5">
               <Copy className="h-4 w-4" />
@@ -327,7 +327,7 @@ export default function PrepPage() {
               </div>
             ))}
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <Label>教学过程（环节 / 分钟 / 设计意图 / 内容）</Label>
                 <Button
                   variant="outline"

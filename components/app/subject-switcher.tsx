@@ -30,7 +30,7 @@ export function SubjectSwitcher({
         router.push(`${pathname}?${params.toString()}`);
       }}
     >
-      <TabsList>
+      <TabsList className="overflow-x-auto">
         {subjects.map((s) => (
           <TabsTrigger key={s.code} value={s.code}>
             {s.name}

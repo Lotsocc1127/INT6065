@@ -55,7 +55,7 @@ export function StudentNav() {
               key={l.href}
               href={l.href}
               className={cn(
-                "flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent",
+                "flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent max-sm:flex-none",
                 pathname === l.href
                   ? "bg-accent font-medium text-accent-foreground"
                   : "text-muted-foreground"

@@ -81,7 +81,7 @@ function TaskCenter() {
             ) : null}
             {pending.map((a) => (
               <Card key={a.id}>
-                <CardHeader className="flex-row items-center justify-between space-y-0">
+                <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
                   <div className="space-y-1">
                     <CardTitle className="flex items-center gap-2 text-base">
                       <FileText className="h-4 w-4" />
@@ -114,7 +114,7 @@ function TaskCenter() {
             ) : null}
             {done.map((a) => (
               <Card key={a.id}>
-                <CardHeader className="flex-row items-center justify-between space-y-0">
+                <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
                   <div className="space-y-1">
                     <CardTitle className="flex items-center gap-2 text-base">
                       <CheckCircle2 className="h-4 w-4 text-emerald-600" />

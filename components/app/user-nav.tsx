@@ -20,7 +20,7 @@ export function UserNav() {
       <Badge variant="secondary" className="hidden sm:inline-flex">
         {ROLE_LABEL[session.user.role] ?? session.user.role}
       </Badge>
-      <span className="text-sm text-muted-foreground">{session.user.name}</span>
+      <span className="hidden text-sm text-muted-foreground sm:inline">{session.user.name}</span>
       <Button
         variant="ghost"
         size="sm"

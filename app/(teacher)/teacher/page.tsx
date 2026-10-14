@@ -219,7 +219,7 @@ function DashboardInner() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <Tabs value={tierFilter} onValueChange={(v) => setTierFilter(v as "all" | Tier)}>
-                  <TabsList>
+                  <TabsList className="overflow-x-auto">
                     <TabsTrigger value="all">全部（{data.students.length}）</TabsTrigger>
                     {(Object.keys(TIER_META) as Tier[]).map((t) => (
                       <TabsTrigger key={t} value={t}>

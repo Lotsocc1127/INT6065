@@ -27,9 +27,9 @@ export function GovernanceModal() {
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-1.5">
+        <Button variant="outline" size="sm" className="gap-1.5" aria-label="数据治理">
           <ShieldCheck className="h-4 w-4" />
-          数据治理
+          <span className="hidden sm:inline">数据治理</span>
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-xl">

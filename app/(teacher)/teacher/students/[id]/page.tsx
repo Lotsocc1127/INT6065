@@ -167,11 +167,11 @@ export default function StudentDetailPage({ params }: { params: { id: string } }
 
       {/* AI 培养建议 */}
       <Card>
-        <CardHeader className="flex-row items-center justify-between">
+        <CardHeader className="flex-row flex-wrap items-center justify-between gap-2">
           <CardTitle className="text-base">AI 培养建议（可解释、可执行；教师最终决策）</CardTitle>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <select
-              className="h-8 rounded-md border border-input bg-transparent px-2 text-sm"
+              className="h-8 rounded-md border border-input bg-transparent px-2 text-sm max-sm:h-9"
               value={suggestSubject}
               onChange={(e) => setSuggestSubject(e.target.value)}
             >

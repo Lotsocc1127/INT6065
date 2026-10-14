@@ -147,7 +147,7 @@ function WrongBook() {
           <div className="space-y-3">
             {active.map((w) => (
               <Card key={w.id} className={w.mastered ? "opacity-70" : ""}>
-                <CardHeader className="flex-row items-start justify-between space-y-0">
+                <CardHeader className="flex-row flex-wrap items-start justify-between gap-2 space-y-0">
                   <div className="space-y-1.5">
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge variant="outline">{TYPE_LABEL[w.type] ?? w.type}</Badge>
@@ -268,7 +268,7 @@ function WrongBook() {
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="mt-1 h-7 px-2 text-xs"
+                      className="mt-1 h-8 px-2 text-xs max-sm:h-9"
                       onClick={() => setRevealIdx((prev) => new Set(prev).add(i))}
                     >
                       查看答案

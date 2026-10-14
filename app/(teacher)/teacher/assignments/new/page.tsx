@@ -351,11 +351,11 @@ export default function NewAssignmentPage() {
 
       {/* 已选题目 */}
       <Card>
-        <CardHeader className="flex-row items-center justify-between">
+        <CardHeader className="flex-row flex-wrap items-center justify-between gap-2">
           <CardTitle className="text-base">
             已选题目（题库 {selected.size} 道 + AI 生成 {generated.length} 道）
           </CardTitle>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => setAiOpen(true)} className="gap-1.5">
               <Sparkles className="h-4 w-4" />
               AI 分层出题
@@ -681,7 +681,7 @@ export default function NewAssignmentPage() {
               ))}
             </div>
           ) : null}
-          <DialogFooter className="flex-row gap-2">
+          <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button
               variant="outline"
               onClick={generateAi}
