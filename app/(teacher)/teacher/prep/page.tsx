@@ -346,12 +346,13 @@ export default function PrepPage() {
               {result.flow.map((f, i) => (
                 <div key={i} className="grid gap-2 rounded-lg border p-3 md:grid-cols-[1fr_5rem_auto]">
                   <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">环节名称</Label>
-                    <Input value={f.stage} onChange={(e) => updateFlow(i, { stage: e.target.value })} />
+                    <Label htmlFor={`flow-stage-${i}`} className="text-xs text-muted-foreground">环节名称</Label>
+                    <Input id={`flow-stage-${i}`} value={f.stage} onChange={(e) => updateFlow(i, { stage: e.target.value })} />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">分钟</Label>
+                    <Label htmlFor={`flow-duration-${i}`} className="text-xs text-muted-foreground">分钟</Label>
                     <Input
+                      id={`flow-duration-${i}`}
                       type="number"
                       min={1}
                       max={45}
@@ -374,6 +375,7 @@ export default function PrepPage() {
                   <Textarea
                     className="md:col-span-3"
                     rows={1}
+                    aria-label={`环节 ${i + 1} 设计意图`}
                     placeholder="设计意图：本环节依据的教学理论/策略（如：脚手架、先行组织者……）"
                     value={f.intent}
                     onChange={(e) => updateFlow(i, { intent: e.target.value })}
@@ -381,6 +383,7 @@ export default function PrepPage() {
                   <Textarea
                     className="md:col-span-3"
                     rows={2}
+                    aria-label={`环节 ${i + 1} 师生活动要点`}
                     placeholder="本环节的师生活动要点……"
                     value={f.content}
                     onChange={(e) => updateFlow(i, { content: e.target.value })}
@@ -406,8 +409,9 @@ export default function PrepPage() {
               {result.pedagogy.map((pg, i) => (
                 <div key={i} className="grid gap-2 rounded-lg border p-3 md:grid-cols-[1fr_2fr_auto]">
                   <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">教学理论</Label>
+                    <Label htmlFor={`pedagogy-theory-${i}`} className="text-xs text-muted-foreground">教学理论</Label>
                     <Input
+                      id={`pedagogy-theory-${i}`}
                       value={pg.theory}
                       placeholder="如：最近发展区（ZPD）"
                       onChange={(e) =>
@@ -420,8 +424,9 @@ export default function PrepPage() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">落地方式</Label>
+                    <Label htmlFor={`pedagogy-application-${i}`} className="text-xs text-muted-foreground">落地方式</Label>
                     <Input
+                      id={`pedagogy-application-${i}`}
                       value={pg.application}
                       placeholder="如：例题设三级台阶，搭脚手架逐步撤除"
                       onChange={(e) =>

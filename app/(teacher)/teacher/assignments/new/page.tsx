@@ -430,8 +430,9 @@ export default function NewAssignmentPage() {
               ) : null}
               <div className="grid gap-2 text-sm md:grid-cols-2">
                 <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">答案</Label>
+                  <Label htmlFor={`gen-answer-${i}`} className="text-xs text-muted-foreground">答案</Label>
                   <Input
+                    id={`gen-answer-${i}`}
                     value={g.answer}
                     onChange={(e) =>
                       setGenerated((prev) =>
@@ -441,8 +442,9 @@ export default function NewAssignmentPage() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">解析</Label>
+                  <Label htmlFor={`gen-analysis-${i}`} className="text-xs text-muted-foreground">解析</Label>
                   <Input
+                    id={`gen-analysis-${i}`}
                     value={g.analysis}
                     onChange={(e) =>
                       setGenerated((prev) =>
@@ -625,8 +627,9 @@ export default function NewAssignmentPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>题目数量</Label>
+              <Label htmlFor="ai-count">题目数量</Label>
               <Input
+                id="ai-count"
                 type="number"
                 min={1}
                 max={10}
