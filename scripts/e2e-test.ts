@@ -4,6 +4,7 @@
  * 运行：npx tsx scripts/e2e-test.ts（需 dev server 已在 http://localhost:3000 运行）
  */
 import { PrismaClient } from "@prisma/client";
+import { llmConfigured } from "../lib/llm";
 
 const BASE = "http://localhost:3000";
 const prisma = new PrismaClient();
@@ -222,7 +223,118 @@ async function main() {
   const tForbidden = await t.fetch("/api/student/path?subject=math");
   assert(tForbidden.status === 403, `教师访问学生接口被拒 ${tForbidden.status}`);
 
-  console.log("\n✅ 全部 12 组端到端断言通过：闭环（布置 → 作答 → 批改 → 掌握度 → 错题 → 看板）验证成功！");
+  console.log("\n== 13. F1 批改置信度与复核队列 ==");
+  const orRes = await t.fetch(`/api/questions?subject=math&type=OPEN_RESPONSE`);
+  const orBank: { id: string; kpIds: string[] }[] = await orRes.json();
+  assert(orBank.length > 0, `题库有解答题（${orBank.length} 道）`);
+  const orQ = orBank[0];
+  const orA = await t.fetch("/api/assignments", {
+    method: "POST",
+    body: JSON.stringify({
+      title: "E2E 复核队列验证作业",
+      type: "HOMEWORK",
+      subjectId: math.id,
+      classId: cls.id,
+      questionIds: [orQ.id],
+    }),
+  });
+  assert(orA.status === 201, `布置解答题作业 ${orA.status}`);
+  const orAssignmentId = (await orA.json()).id as string;
+  const orSubmit = await s.fetch(`/api/assignments/${orAssignmentId}/submit`, {
+    method: "POST",
+    body: JSON.stringify({
+      answers: [{ questionId: orQ.id, response: "步骤省略，直接写结果 42", timeSpentMs: 60000 }],
+    }),
+  });
+  assert(orSubmit.status === 201, `解答题提交 ${orSubmit.status}`);
+  const orResult = (await orSubmit.json()) as {
+    results: { isCorrect: boolean | null; score: number | null; confidence: number | null; reviewStatus: string }[];
+  };
+  const g = orResult.results[0];
+  if (!llmConfigured()) {
+    assert(g.isCorrect === null && g.confidence === null, "未配 Key 时解答题为待批改（null/null）");
+    assert(g.reviewStatus === "needs_review", "reviewStatus 为 needs_review");
+    const q1 = await t.fetch(`/api/review-queue?classId=${cls.id}`);
+    const q1j = await q1.json();
+    const inQueue = (q1j.items ?? []).find(
+      (x: { studentName: string; assignmentTitle: string }) =>
+        x.assignmentTitle === "E2E 复核队列验证作业"
+    );
+    assert(Boolean(inQueue), "待复核队列中出现该作答");
+    // 教师改判：判错 0.3 分 → 写库 + 联动掌握度/错题本
+    const ov = await t.fetch("/api/review-queue", {
+      method: "POST",
+      body: JSON.stringify({
+        recordId: inQueue.id,
+        action: "override",
+        isCorrect: false,
+        score: 0.3,
+        errorAnalysis: "E2E 复核说明",
+      }),
+    });
+    assert(ov.status === 200, `改判落库 ${ov.status}`);
+    const ovj = await ov.json();
+    assert(
+      Object.keys(ovj.mastery ?? {}).length > 0,
+      `改判联动掌握度（${Object.keys(ovj.mastery ?? {}).length} 个知识点）`
+    );
+    const rec = await prisma.answerRecord.findUniqueOrThrow({ where: { id: inQueue.id } });
+    assert(rec.reviewStatus === "reviewed" && rec.isCorrect === false, "记录已复核且判错");
+    assert(Math.abs((rec.score ?? 0) - 0.3) < 1e-9, "分数已写为 0.3");
+    const wq = await prisma.wrongQuestion.findUnique({
+      where: { studentId_questionId: { studentId: student.id, questionId: orQ.id } },
+    });
+    assert(Boolean(wq), "改判为错后进入错题本");
+    const q2 = await t.fetch(`/api/review-queue?classId=${cls.id}`);
+    const q2j = await q2.json();
+    assert(
+      !(q2j.items ?? []).some((x: { id: string }) => x.id === inQueue.id),
+      "复核后从队列移除"
+    );
+    // AI 重批（无 Key）：不写库，persisted=false
+    const rg = await t.fetch("/api/ai/grade", {
+      method: "POST",
+      body: JSON.stringify({ questionId: orQ.id, response: "步骤省略", answerRecordId: inQueue.id }),
+    });
+    assert(rg.status === 200, `AI 重批接口 ${rg.status}`);
+    const rgj = await rg.json();
+    assert(rgj.persisted === false, "无 Key 时 AI 重批不写库（persisted=false）");
+  } else {
+    console.log("  （已配置 LLM Key，跳过无 Key 分支断言；解答题走 AI 批改路径）");
+  }
+
+  console.log("\n== 15. F2 变式补救作业 ==");
+  const kpsRes = await t.fetch(`/api/remedial/kps?subject=math&classId=${cls.id}`);
+  assert(kpsRes.status === 200, `补救知识点聚合 ${kpsRes.status}`);
+  const kpsJ = (await kpsRes.json()) as { items: { kpId: string; code: string; wrongCount: number; studentCount: number }[] };
+  assert(Array.isArray(kpsJ.items), "聚合返回 items 数组");
+  if (kpsJ.items.length) {
+    const [first] = kpsJ.items;
+    assert(first.wrongCount > 0 && first.studentCount > 0, `首项 ${first.code} 有错题数据（${first.studentCount} 人 ${first.wrongCount} 次）`);
+    const sortedOk = kpsJ.items.every(
+      (x, i, arr) => i === 0 || arr[i - 1].studentCount >= x.studentCount
+    );
+    assert(sortedOk, "聚合按涉及学生数降序");
+    const genRes = await t.fetch("/api/remedial/generate", {
+      method: "POST",
+      body: JSON.stringify({ subjectCode: "math", kpIds: [first.kpId], perKp: 1, tier: "auto", classId: cls.id }),
+    });
+    const genJ = await genRes.json();
+    if (!llmConfigured()) {
+      assert(genRes.status === 502, `无 Key 时生成返回 502（实际 ${genRes.status}）`);
+      assert(String(genJ.error ?? "").includes("未配置"), "错误信息提示未配置 API Key");
+    } else {
+      assert(genRes.status === 200 && Array.isArray(genJ.questions) && genJ.questions.length > 0, "生成返回题目列表");
+      for (const q of genJ.questions as { kpId: string; tier: string }[]) {
+        assert(q.kpId === first.kpId, `题目关联所选知识点（${q.kpId}）`);
+        assert(["foundation", "intermediate", "advanced"].includes(q.tier), `题目带合法层级（${q.tier}）`);
+      }
+    }
+  } else {
+    console.log("  （该班暂无未攻克错题，跳过聚合细节断言）");
+  }
+
+  console.log("\n✅ 全部端到端断言通过：闭环（布置 → 作答 → 批改 → 掌握度 → 错题 → 看板）+ F1 复核队列 + F2 补救聚合验证成功！");
 }
 
 main()

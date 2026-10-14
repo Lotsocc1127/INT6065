@@ -76,6 +76,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
             : null;
         })(),
         answers: s.answers.map((a) => ({
+          id: a.id,
           questionId: a.questionId,
           response: a.response,
           isCorrect: a.isCorrect,
@@ -84,6 +85,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
           errorTags: parseArr(a.errorTags),
           errorAnalysis: a.errorAnalysis,
           improvement: a.improvement,
+          confidence: a.confidence,
+          reviewStatus: a.reviewStatus,
         })),
       }));
     }
@@ -122,6 +125,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
             id: mySubmission.id,
             submittedAt: mySubmission.submittedAt,
             answers: mySubmission.answers.map((a) => ({
+              id: a.id,
               questionId: a.questionId,
               response: a.response,
               isCorrect: a.isCorrect,
@@ -130,6 +134,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
               errorTags: parseArr(a.errorTags),
               errorAnalysis: a.errorAnalysis,
               improvement: a.improvement,
+              confidence: a.confidence,
+              reviewStatus: a.reviewStatus,
             })),
           }
         : null,

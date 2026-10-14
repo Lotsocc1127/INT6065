@@ -57,9 +57,10 @@ export const GRADE_SYSTEM = `你是初中数学（或对应学科）批改老师
 要求：客观公正，不臆造学生未写的步骤；指出具体卡点与下一步建议。
 ${JSON_ONLY}
 输出 JSON 结构：
-{ "isCorrect": boolean, "score": number(0-1), "errorTags": string[], "errorAnalysis": string, "improvement": string }
+{ "isCorrect": boolean, "score": number(0-1), "confidence": number(0-1), "errorTags": string[], "errorAnalysis": string, "improvement": string }
 - isCorrect：完全正确为 true。
 - score：按步骤完成度给 0-1 的分数。
+- confidence：对本次判分结论的自信程度（0-1）。判分依据明确、作答规范时接近 1；作答部分正确、步骤混乱、存在多种合理给分方式或关键信息模糊时降低；低于 0.7 表示建议教师复核。完全无法判断对错时给 0。
 - errorTags：从 ["计算失误","概念混淆","步骤遗漏","审题错误","其他"] 中选择，可多个。
 - errorAnalysis：一句话点明错在哪一步、为什么。
 - improvement：给出下一步具体可行的改进建议。`;

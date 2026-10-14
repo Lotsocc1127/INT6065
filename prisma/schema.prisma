@@ -96,6 +96,7 @@ model Assignment {
   difficulty Int?
   dueAt      DateTime?
   createdAt  DateTime       @default(now())
+  source     String? // "demo" = 演示数据（可整批清理）；null = 常规
   subject    Subject        @relation(fields: [subjectId], references: [id])
   class      Class          @relation(fields: [classId], references: [id])
   questions  AssignmentQuestion[]
@@ -142,6 +143,9 @@ model AnswerRecord {
   errorTags      String    @default("[]") // 错误类型标签（JSON）
   errorAnalysis  String? // 错误归因
   improvement    String? // 改进建议
+  confidence     Float? // AI 判分置信度 0-1（客观题=1；未配 key/AI 失败=null）
+  reviewStatus   String    @default("none") // "none" | "needs_review" | "reviewed"
+  reviewedAt     DateTime? // 复核/AI 重批落库时间
   submission     Submission @relation(fields: [submissionId], references: [id])
 }
 
@@ -164,6 +168,7 @@ model MasteryPoint {
   masteryId String
   value     Float
   at        DateTime @default(now())
+  source    String? // "demo" = 演示周期生成（可整批清理）
   mastery   Mastery  @relation(fields: [masteryId], references: [id])
 }
 

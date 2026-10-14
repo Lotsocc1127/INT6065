@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, CheckCircle2, Circle, Copy, Loader2, RefreshCw, Sparkles, XCircle } from "lucide-react";
 import { toast } from "sonner";
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EChart } from "@/components/charts/echart";
 import { EmptyState } from "@/components/app/empty-state";
+import { ConfidenceBadge } from "@/components/app/confidence-badge";
 import { hbarOption } from "@/lib/charts";
 import { TIER_META, type Tier } from "@/lib/mastery";
 import { choiceAnswerText, fmtDate, fmtDateTime, fmtDuration, pct } from "@/lib/utils";
@@ -31,6 +32,7 @@ interface QuestionRow {
   analysis?: string | null;
 }
 interface AnswerRow {
+  id: string;
   questionId: string;
   response: string;
   isCorrect: boolean | null;
@@ -39,6 +41,8 @@ interface AnswerRow {
   errorTags: string[];
   errorAnalysis: string | null;
   improvement: string | null;
+  confidence: number | null;
+  reviewStatus: string;
 }
 interface SubmissionRow {
   id: string;
@@ -112,12 +116,11 @@ export default function AssignmentDetailPage({ params }: { params: { id: string 
   const [error, setError] = useState("");
   const [selectedId, setSelectedId] = useState<string>("");
   const [regrading, setRegrading] = useState<Record<string, boolean>>({});
-  const [regrades, setRegrades] = useState<Record<string, unknown>>({});
   // 个性化分析：按学生缓存（切换不丢失）
   const [analyses, setAnalyses] = useState<Record<string, Analysis | null>>({});
   const [analyzing, setAnalyzing] = useState<Record<string, boolean>>({});
 
-  useEffect(() => {
+  const loadData = useCallback(() => {
     fetch(`/api/assignments/${id}`)
       .then(async (r) => {
         const j = await r.json();
@@ -127,6 +130,10 @@ export default function AssignmentDetailPage({ params }: { params: { id: string 
       })
       .catch((e) => setError(e.message));
   }, [id]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const selected: SubmissionRow | undefined = useMemo(
     () => data?.submissions.find((s) => s.id === selectedId) ?? data?.submissions[0],
@@ -173,23 +180,27 @@ export default function AssignmentDetailPage({ params }: { params: { id: string 
     });
   }, [tagCount]);
 
-  async function regrade(studentId: string, questionId: string, response: string) {
-    const key = `${studentId}:${questionId}`;
-    setRegrading((p) => ({ ...p, [key]: true }));
+  async function regrade(a: AnswerRow) {
+    setRegrading((p) => ({ ...p, [a.id]: true }));
     try {
       const r = await fetch("/api/ai/grade", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ questionId, response }),
+        body: JSON.stringify({ questionId: a.questionId, response: a.response, answerRecordId: a.id }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error ?? "批改失败");
-      setRegrades((p) => ({ ...p, [key]: j }));
-      toast.success("AI 重批完成");
+      // 重批结果已落库（联动掌握度/错题本），重新拉取详情展示最新状态
+      loadData();
+      if (j.persisted === false) {
+        toast.warning("AI 未能完成批改（未配置 Key 或调用失败），保持待复核状态");
+      } else {
+        toast.success("AI 重批完成，结果已保存");
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "批改失败");
     } finally {
-      setRegrading((p) => ({ ...p, [key]: false }));
+      setRegrading((p) => ({ ...p, [a.id]: false }));
     }
   }
 
@@ -293,11 +304,7 @@ export default function AssignmentDetailPage({ params }: { params: { id: string 
               <div className="space-y-2 lg:col-span-3">
                 {selected.answers.map((a, i) => {
                   const q = qById.get(a.questionId);
-                  const key = `${selected.id}:${a.questionId}`;
-                  const rg = regrades[key] as
-                    | { isCorrect?: boolean; score?: number; errorAnalysis?: string }
-                    | undefined;
-                  const score = rg?.score ?? a.score;
+                  const score = a.score;
                   return (
                     <div key={a.questionId} className="rounded-md bg-muted/50 p-2.5 text-sm">
                       <div className="flex items-start gap-2">
@@ -317,6 +324,24 @@ export default function AssignmentDetailPage({ params }: { params: { id: string 
                                 {c}
                               </Badge>
                             ))}
+                            {q?.type === "OPEN_RESPONSE" && a.confidence != null ? (
+                              <ConfidenceBadge confidence={a.confidence} />
+                            ) : null}
+                            {a.reviewStatus === "needs_review" ? (
+                              <Badge className="bg-amber-100 text-amber-800">
+                                待复核
+                                <Link
+                                  href="/teacher/review"
+                                  className="ml-1 underline underline-offset-2"
+                                >
+                                  去复核
+                                </Link>
+                              </Badge>
+                            ) : a.reviewStatus === "reviewed" ? (
+                              <Badge variant="outline" className="text-muted-foreground">
+                                已复核
+                              </Badge>
+                            ) : null}
                           </div>
                           <div className="truncate text-muted-foreground">{q?.stem}</div>
                           <div className="mt-1">
@@ -328,7 +353,11 @@ export default function AssignmentDetailPage({ params }: { params: { id: string 
                               <Badge variant="outline" className="ml-2">
                                 {pct(score)}
                               </Badge>
-                            ) : null}
+                            ) : (
+                              <Badge variant="outline" className="ml-2 text-muted-foreground">
+                                待批改
+                              </Badge>
+                            )}
                             {a.timeSpentMs ? (
                               <span className="ml-2 text-xs text-muted-foreground">
                                 用时 {Math.round(a.timeSpentMs / 1000)}s
@@ -344,9 +373,9 @@ export default function AssignmentDetailPage({ params }: { params: { id: string 
                               ))}
                             </div>
                           ) : null}
-                          {(rg?.errorAnalysis ?? a.errorAnalysis) ? (
+                          {a.errorAnalysis ? (
                             <div className="mt-1 text-xs text-muted-foreground">
-                              归因：{rg?.errorAnalysis ?? a.errorAnalysis}
+                              归因：{a.errorAnalysis}
                             </div>
                           ) : null}
                           {a.improvement ? (
@@ -360,11 +389,11 @@ export default function AssignmentDetailPage({ params }: { params: { id: string 
                             variant="outline"
                             size="sm"
                             className="shrink-0 gap-1"
-                            disabled={regrading[key]}
-                            onClick={() => regrade(selected.id, a.questionId, a.response)}
+                            disabled={regrading[a.id]}
+                            onClick={() => regrade(a)}
                           >
                             <RefreshCw
-                              className={`h-3.5 w-3.5 ${regrading[key] ? "animate-spin" : ""}`}
+                              className={`h-3.5 w-3.5 ${regrading[a.id] ? "animate-spin" : ""}`}
                             />
                             AI 重批
                           </Button>

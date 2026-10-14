@@ -38,6 +38,24 @@ export interface GradedAnswer {
   errorAnalysis: string | null;
   improvement: string | null;
   aiGraded: boolean;
+  confidence: number | null;
+  reviewStatus: "none" | "needs_review";
+}
+
+/** AI 判分置信度低于该值时解答题进入教师复核队列 */
+export const REVIEW_CONFIDENCE_THRESHOLD = 0.7;
+
+/** 复核状态：仅解答题可能待复核（客观题确定性判分）；未判分/低置信度 → needs_review */
+export function computeReviewStatus(
+  type: string,
+  isCorrect: boolean | null,
+  confidence: number | null
+): "none" | "needs_review" {
+  if (type !== "OPEN_RESPONSE") return "none";
+  if (isCorrect === null || confidence === null || confidence < REVIEW_CONFIDENCE_THRESHOLD) {
+    return "needs_review";
+  }
+  return "none";
 }
 
 /** 填空题答案归一化：去空白/标点、转小写，支持 | 分隔的多个可接受答案 */
@@ -71,6 +89,8 @@ export async function gradeAnswer(question: Question, response: string): Promise
       errorAnalysis: isCorrect ? null : question.analysis ?? null,
       improvement: null,
       aiGraded: false,
+      confidence: 1, // 确定性判分
+      reviewStatus: "none",
     };
   }
   if (!llmConfigured()) {
@@ -81,12 +101,15 @@ export async function gradeAnswer(question: Question, response: string): Promise
       errorAnalysis: "未配置 LLM API Key（.env），本题待人工批改。",
       improvement: null,
       aiGraded: false,
+      confidence: null,
+      reviewStatus: "needs_review",
     };
   }
   try {
     const g = await llmJson<{
       isCorrect: boolean;
       score: number;
+      confidence?: number;
       errorTags: string[];
       errorAnalysis: string;
       improvement: string;
@@ -105,13 +128,18 @@ export async function gradeAnswer(question: Question, response: string): Promise
           .join("\n"),
       },
     ]);
+    const isCorrect = Boolean(g.isCorrect);
+    const confidence =
+      Number.isFinite(Number(g.confidence)) ? clamp(Number(g.confidence), 0, 1) : 0.5; // 漏给默认 0.5，保守进队列
     return {
-      isCorrect: Boolean(g.isCorrect),
+      isCorrect,
       score: clamp(Number(g.score) || 0, 0, 1),
       errorTags: Array.isArray(g.errorTags) ? g.errorTags : [],
       errorAnalysis: g.errorAnalysis ?? null,
       improvement: g.improvement ?? null,
       aiGraded: true,
+      confidence,
+      reviewStatus: computeReviewStatus(question.type, isCorrect, confidence),
     };
   } catch (e) {
     return {
@@ -121,6 +149,8 @@ export async function gradeAnswer(question: Question, response: string): Promise
       errorAnalysis: `AI 批改失败：${e instanceof Error ? e.message : "未知错误"}（待人工批改）`,
       improvement: null,
       aiGraded: false,
+      confidence: null,
+      reviewStatus: "needs_review",
     };
   }
 }
@@ -177,7 +207,7 @@ export async function processSubmission(opts: {
     });
   }
 
-  // 按知识点聚合本次得分率
+  // 按知识点聚合本次得分率（低置信度解答题暂按 AI 给分计入；教师复核后由 lib/review.ts 修正）
   const kpRates = new Map<string, { sum: number; n: number }>();
   for (const g of graded) {
     const kpIds = parseArr(qById.get(g.questionId)!.kpIds);
@@ -224,6 +254,8 @@ export async function processSubmission(opts: {
             errorTags: toArrStr(g.errorTags),
             errorAnalysis: g.errorAnalysis,
             improvement: g.improvement,
+            confidence: g.confidence,
+            reviewStatus: g.reviewStatus,
           })),
         },
       },

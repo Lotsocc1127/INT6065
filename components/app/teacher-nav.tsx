@@ -1,17 +1,20 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BookOpen, ClipboardList, FilePlus2, Sparkles, Users2, type LucideIcon } from "lucide-react";
+import { BookOpen, ClipboardCheck, ClipboardList, FilePlus2, Sparkles, Users2, type LucideIcon } from "lucide-react";
 import { BrandLogo } from "@/components/app/brand-logo";
 import { GovernanceModal } from "@/components/app/governance-modal";
 import { SettingsMenu } from "@/components/app/settings-menu";
 import { UserNav } from "@/components/app/user-nav";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 const LINKS: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/teacher", label: "班级看板", icon: BookOpen },
   { href: "/teacher/assignments", label: "作业管理", icon: ClipboardList },
+  { href: "/teacher/review", label: "待复核", icon: ClipboardCheck },
   { href: "/teacher/assignments/new", label: "布置作业", icon: FilePlus2 },
   { href: "/teacher/prep", label: "AI 备课", icon: Sparkles },
   { href: "/teacher/students", label: "学生管理", icon: Users2 },
@@ -19,6 +22,14 @@ const LINKS: { href: string; label: string; icon: LucideIcon }[] = [
 
 export function TeacherNav() {
   const pathname = usePathname();
+  // 待复核数量徽章
+  const [reviewCount, setReviewCount] = useState(0);
+  useEffect(() => {
+    fetch("/api/review-queue?countOnly=1")
+      .then((r) => r.json())
+      .then((j) => setReviewCount(Number(j.count) || 0))
+      .catch(() => {});
+  }, [pathname]);
   return (
     <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-4 px-4 md:px-6">
@@ -44,6 +55,14 @@ export function TeacherNav() {
               >
                 <l.icon className="h-4 w-4 shrink-0" />
                 {l.label}
+                {l.href === "/teacher/review" && reviewCount > 0 ? (
+                  <Badge
+                    variant="secondary"
+                    className="ml-0.5 h-4 min-w-4 justify-center px-1 text-[10px]"
+                  >
+                    {reviewCount}
+                  </Badge>
+                ) : null}
               </Link>
             ))}
           </nav>

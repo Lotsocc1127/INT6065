@@ -3,7 +3,8 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { AlertTriangle, Users } from "lucide-react";
+import { AlertTriangle, Sparkles, Users } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -20,6 +21,7 @@ import { StatCard } from "@/components/app/stat-card";
 import { SubjectSwitcher, type SubjectInfo } from "@/components/app/subject-switcher";
 import { QuoteCard } from "@/components/app/quote-card";
 import { TierBadge, TierLegend } from "@/components/app/tier-badge";
+import { RemedialDialog } from "@/components/app/remedial-dialog";
 import { hbarOption, heatmapOption, lineOption } from "@/lib/charts";
 import { TIER_META, type Tier } from "@/lib/mastery";
 import { pct } from "@/lib/utils";
@@ -61,6 +63,7 @@ function DashboardInner() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState("");
   const [tierFilter, setTierFilter] = useState<"all" | Tier>("all");
+  const [remedialOpen, setRemedialOpen] = useState(false);
 
   useEffect(() => {
     fetch("/api/subjects")
@@ -333,9 +336,26 @@ function DashboardInner() {
                 <span className="text-muted-foreground">
                   建议针对这些知识点布置分层作业或组织讲评。
                 </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="ml-auto gap-1.5"
+                  onClick={() => setRemedialOpen(true)}
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  一键补救
+                </Button>
               </CardContent>
             </Card>
           ) : null}
+
+          <RemedialDialog
+            open={remedialOpen}
+            onOpenChange={setRemedialOpen}
+            subject={subject}
+            classId={data?.class.id ?? ""}
+            className={data?.class.name ?? ""}
+          />
 
           <TierLegend />
         </>
