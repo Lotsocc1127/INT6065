@@ -29,6 +29,7 @@ export type LlmTask =
   | "socrates"
   | "prep"
   | "analysis"
+  | "report"
   | "default";
 
 export interface LlmOptions {
