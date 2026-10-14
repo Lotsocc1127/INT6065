@@ -30,6 +30,13 @@ enum AssignmentType {
   QUIZ
 }
 
+enum AppealStatus {
+  NONE      // 未申诉
+  PENDING   // 已申诉 · 待教师复核
+  ACCEPTED  // 申诉通过（目标视为达成）
+  REJECTED  // 申诉被驳回（目标恢复正常）
+}
+
 model User {
   id        String  @id @default(cuid())
   name      String
@@ -188,14 +195,20 @@ model WrongQuestion {
 }
 
 model LearningGoal {
-  id         String   @id @default(cuid())
-  studentId  String
-  content    String
-  kpId       String?
-  done       Boolean  @default(false)
-  challenged Boolean  @default(false) // 学生对标签提出异议
-  createdAt  DateTime @default(now())
-  student    User     @relation(fields: [studentId], references: [id])
+  id                String       @id @default(cuid())
+  studentId         String
+  content           String
+  kpId              String?
+  done              Boolean      @default(false)
+  // 申诉闭环：PENDING 期间 done 锁定为 false（服务端强制）
+  appealStatus      AppealStatus @default(NONE)
+  appealReason      String?      // 学生申诉理由（选填）
+  appealReply       String?      // 教师回复（选填，学生可见）
+  appealRequestedAt DateTime?    // 申诉提交时间（队列排序用）
+  appealResolvedAt  DateTime?    // 教师处理时间
+  appealResolvedBy  String?      // 处理教师 User.id（纯字符串，不做外键）
+  createdAt         DateTime     @default(now())
+  student           User         @relation(fields: [studentId], references: [id])
 }
 
 model ShareLink {

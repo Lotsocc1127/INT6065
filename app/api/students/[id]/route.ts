@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api";
 import { requireApiUser } from "@/lib/auth";
+import { goalDto } from "@/lib/goals";
 import { avg } from "@/lib/mastery";
 import { prisma } from "@/lib/prisma";
 
@@ -62,13 +63,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
           history: m.history.map((h) => ({ value: h.value, at: h.at })),
         })),
       })),
-      goals: goals.map((g) => ({
-        id: g.id,
-        content: g.content,
-        done: g.done,
-        challenged: g.challenged,
-        createdAt: g.createdAt,
-      })),
+      goals: goals.map(goalDto),
       wrongCount,
       submissions: submissions.map((s) => ({
         id: s.id,

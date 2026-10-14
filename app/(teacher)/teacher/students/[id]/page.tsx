@@ -34,7 +34,14 @@ interface SubjectGroup {
 interface StudentData {
   student: { id: string; name: string; className: string | null; tierOverride: string | null };
   mastery: SubjectGroup[];
-  goals: { id: string; content: string; done: boolean; challenged: boolean }[];
+  goals: {
+    id: string;
+    content: string;
+    done: boolean;
+    appealStatus: "NONE" | "PENDING" | "ACCEPTED" | "REJECTED";
+    appealReason?: string | null;
+    appealReply?: string | null;
+  }[];
   wrongCount: number;
   submissions: {
     id: string;
@@ -203,8 +210,8 @@ export default function StudentDetailPage({ params }: { params: { id: string } }
         <StatCard label="学习目标" value={`${data.goals.length} 个`} />
         <StatCard
           label="目标申诉"
-          value={`${data.goals.filter((g) => g.challenged).length} 个`}
-          hint={data.goals.some((g) => g.challenged) ? "需教师复核" : undefined}
+          value={`${data.goals.filter((g) => g.appealStatus === "PENDING").length} 个`}
+          hint={data.goals.some((g) => g.appealStatus === "PENDING") ? "需教师复核" : undefined}
         />
       </div>
 
@@ -304,17 +311,28 @@ export default function StudentDetailPage({ params }: { params: { id: string } }
         <CardContent className="space-y-2">
           {!data.goals.length ? <p className="text-sm text-muted-foreground">暂无目标。</p> : null}
           {data.goals.map((g) => (
-            <div key={g.id} className="flex items-center gap-2 rounded-md border p-2.5 text-sm">
-              <span className={g.done ? "text-muted-foreground line-through" : ""}>{g.content}</span>
-              <div className="ml-auto flex shrink-0 gap-2">
-                {g.done ? <Badge variant="secondary">已完成</Badge> : <Badge variant="outline">进行中</Badge>}
-                {g.challenged ? (
-                  <Badge variant="destructive" className="gap-1">
-                    <MessageSquareWarning className="h-3 w-3" />
-                    已申诉·待复核
-                  </Badge>
-                ) : null}
+            <div key={g.id} className="rounded-md border p-2.5 text-sm">
+              <div className="flex items-center gap-2">
+                <span className={g.done ? "text-muted-foreground line-through" : ""}>{g.content}</span>
+                <div className="ml-auto flex shrink-0 gap-2">
+                  {g.done ? <Badge variant="secondary">已完成</Badge> : <Badge variant="outline">进行中</Badge>}
+                  {g.appealStatus === "PENDING" ? (
+                    <Badge variant="destructive" className="gap-1">
+                      <MessageSquareWarning className="h-3 w-3" />
+                      已申诉·待复核
+                    </Badge>
+                  ) : null}
+                  {g.appealStatus === "ACCEPTED" ? (
+                    <Badge variant="secondary">申诉已通过</Badge>
+                  ) : null}
+                  {g.appealStatus === "REJECTED" ? <Badge variant="outline">申诉未通过</Badge> : null}
+                </div>
               </div>
+              {g.appealReply ? (
+                <div className="mt-1.5 rounded-md bg-muted/50 p-2 text-xs text-muted-foreground">
+                  教师回复：{g.appealReply}
+                </div>
+              ) : null}
             </div>
           ))}
         </CardContent>

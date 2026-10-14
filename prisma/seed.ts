@@ -5,7 +5,7 @@
  * 运行：npx prisma db seed           （数据已存在则跳过）
  *       npx tsx prisma/seed.ts --force（清空重灌）
  */
-import { PrismaClient, QuestionType, AssignmentType, Role, type User } from "@prisma/client";
+import { PrismaClient, QuestionType, AssignmentType, AppealStatus, Role, type User } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { parseArr, toArrStr } from "../lib/json";
 import { avg, tierOf } from "../lib/mastery";
@@ -628,12 +628,43 @@ async function main() {
     "掌握去分母的方法，测验正确率达到 80%",
     "整理错题本并重做全部错题",
   ];
-  for (const stu of students) {
+  for (const [gi, stu] of students.entries()) {
+    const done = rng() < 0.3; // 每名学生恰好调用一次 rng()，保持既有随机序列不变
+    // 前 3 名学生构造申诉闭环演示数据（不变量：PENDING 必须 done=false）
+    const appeal =
+      gi === 0
+        ? {
+            appealStatus: AppealStatus.PENDING,
+            appealReason: "我觉得已经掌握了这部分内容，这个目标对我的帮助不大，希望老师帮我调整。",
+            appealRequestedAt: new Date(Date.now() - 2 * DAY),
+            done: false,
+          }
+        : gi === 1
+          ? {
+              appealStatus: AppealStatus.REJECTED,
+              appealReason: "这道题只是我算错了一步，知识点我其实是懂的。",
+              appealReply: "你的解题步骤还有遗漏，建议先完成本周练习，我们下周再一起看掌握度。",
+              appealRequestedAt: new Date(Date.now() - 3 * DAY),
+              appealResolvedAt: new Date(Date.now() - DAY),
+              appealResolvedBy: teacher.id,
+            }
+          : gi === 2
+            ? {
+                appealStatus: AppealStatus.ACCEPTED,
+                appealReason: "系统给我的分层与我的实际水平不符。",
+                appealReply: "同意，已视为达成，继续加油。",
+                appealRequestedAt: new Date(Date.now() - 3 * DAY),
+                appealResolvedAt: new Date(Date.now() - DAY),
+                appealResolvedBy: teacher.id,
+                done: true,
+              }
+            : {};
     await prisma.learningGoal.create({
       data: {
         studentId: stu.id,
         content: pick(goalTemplates),
-        done: rng() < 0.3,
+        done,
+        ...appeal,
       },
     });
   }
@@ -648,6 +679,7 @@ async function main() {
   console.log(`  英语：${engKpDefs.length} 个知识点，${englishQuestions.length} 道题`);
   console.log(`  语文：${chiKpDefs.length} 个知识点，${chineseQuestions.length} 道题`);
   console.log(`  演示作业：每班 2 份（数学作业 + 语文小测），共 ${demoAssignments.length} 份`);
+  console.log(`  演示申诉：1 待复核 / 1 已驳回 / 1 已通过（前 3 名学生）`);
   console.log(`  演示账号密码统一为 ${DEMO_PASSWORD}（bcrypt 哈希存储）`);
 }
 

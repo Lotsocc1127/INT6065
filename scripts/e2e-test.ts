@@ -56,7 +56,13 @@ class Session {
     });
     this.apply(res);
     const j = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
-    if (j.error) throw new Error(`登录失败: ${j.error}`);
+    // 密码错时 next-auth 返回 200 + 带 error 参数的 url（不返回 error 字段、也不抛 4xx），
+    // 只判 j.error 会把失败当成功，症状是「登录没报错、后续请求全 401」。
+    // 以是否真拿到 session cookie 为准。
+    const token = [...this.cookies.keys()].find((k) => k.endsWith("session-token"));
+    if (j.error || !token || (j.url ?? "").includes("error=")) {
+      throw new Error(`登录失败: ${j.error ?? j.url ?? "未拿到 session cookie"}`);
+    }
     return j;
   }
 }
@@ -66,8 +72,30 @@ function assert(cond: unknown, msg: string) {
   console.log(`  ✓ ${msg}`);
 }
 
+/**
+ * 共享 Neon 库是多人共用的，常有组员自建账号（密码不是 123456）。
+ * `findFirst({ role })` 可能选中这类账号，导致第 1 组登录就 401、整轮跑不完。
+ * 这里按「能否用默认密码登录」逐个探测，选第一个能登上的账号。
+ */
+async function findLoginable(role: "TEACHER" | "ADMIN") {
+  const candidates = await prisma.user.findMany({ where: { role }, select: { id: true, name: true } });
+  for (const u of candidates) {
+    try {
+      await new Session().login(u.id);
+      return u;
+    } catch {
+      // 换下一个候选
+    }
+  }
+  throw new Error(
+    `没有能用默认密码（123456）登录的 ${role} 账号；候选：${
+      candidates.map((c) => c.name).join("、") || "（该库无此类账号，请先 npx prisma db seed）"
+    }`
+  );
+}
+
 async function main() {
-  const teacher = await prisma.user.findFirstOrThrow({ where: { role: "TEACHER" } });
+  const teacher = await findLoginable("TEACHER");
   const student = await prisma.user.findFirstOrThrow({
     where: { role: "STUDENT", classId: { not: null } },
     orderBy: { name: "asc" },
@@ -304,11 +332,24 @@ async function main() {
   }
 
   console.log("\n== 14. F4 应用内一键演示数据 ==");
-  const admin = await prisma.user.findFirstOrThrow({ where: { role: "ADMIN" } });
+  const admin = await findLoginable("ADMIN");
   const ad = new Session();
   await ad.login(admin.id);
   const qBefore = await (await t.fetch(`/api/review-queue?countOnly=1`)).json();
   const countBefore = Number(qBefore.count) || 0;
+
+  // 生成量 = 轮数 × 班级人数，班级人数随共享库漂移（组员增删过学生），
+  // 所以期望值按「生成器会选中的那 3 个班」的实际人数推导，不写死 450/1350/240。
+  const rounds = 5;
+  const demoClasses = (
+    await prisma.class.findMany({
+      include: { _count: { select: { students: { where: { role: "STUDENT" } } } } },
+    })
+  )
+    .filter((c) => c._count.students > 0)
+    .slice(0, 3);
+  const demoStudents = demoClasses.reduce((n, c) => n + c._count.students, 0);
+  assert(demoClasses.length === 3 && demoStudents > 0, `可推导演示规模：${demoClasses.length} 班 / ${demoStudents} 人`);
 
   const gen = await ad.fetch("/api/admin/demo", { method: "POST", body: JSON.stringify({ mode: "generate" }) });
   assert(gen.status === 200, `生成演示数据 ${gen.status}`);
@@ -321,27 +362,48 @@ async function main() {
     pendingReview: number;
   };
   assert(genJ.mode === "generate", "generate 响应 mode 正确");
-  assert(genJ.classes === 3, `覆盖 3 个班级（实际 ${genJ.classes}）`);
-  assert(genJ.assignments === 15, `生成 15 份演示作业（实际 ${genJ.assignments}）`);
-  assert(genJ.submissions === 450, `生成 450 份提交（实际 ${genJ.submissions}）`);
-  assert(genJ.answers === 1350, `生成 1350 条作答（实际 ${genJ.answers}）`);
-  assert(genJ.pendingReview === 240, `生成 240 条待复核（实际 ${genJ.pendingReview}）`);
+  assert(genJ.classes === demoClasses.length, `覆盖 ${demoClasses.length} 个班级（实际 ${genJ.classes}）`);
+  assert(
+    genJ.assignments === rounds * demoClasses.length,
+    `生成 ${rounds * demoClasses.length} 份演示作业（实际 ${genJ.assignments}）`
+  );
+  assert(
+    genJ.submissions === rounds * demoStudents,
+    `生成 ${rounds * demoStudents} 份提交（= ${rounds} 轮 × ${demoStudents} 人，实际 ${genJ.submissions}）`
+  );
+  // 每次作业每生可见题 = 2 道无层级题 + 1 道本层级题
+  assert(genJ.answers === 3 * genJ.submissions, `每份提交 3 条作答（实际 ${genJ.answers}/${genJ.submissions}）`);
+  // 解答题每班 2-3 轮各 1 道，且恒为可见（tier 为空）；所有解答题作答都进待复核
+  assert(
+    genJ.pendingReview >= 2 * demoStudents && genJ.pendingReview <= 3 * demoStudents,
+    `待复核 = 解答题作答，落在 [2×${demoStudents}, 3×${demoStudents}] 内（实际 ${genJ.pendingReview}）`
+  );
 
   const demoAsg = await prisma.assignment.count({ where: { source: "demo" } });
-  assert(demoAsg === 15, `DB 中 demo 作业 15 份（实际 ${demoAsg}）`);
+  assert(demoAsg === genJ.assignments, `DB 中 demo 作业 ${genJ.assignments} 份（实际 ${demoAsg}）`);
   const demoPts = await prisma.masteryPoint.count({ where: { source: "demo" } });
   assert(demoPts > 0, `DB 中 demo 掌握度历史点 ${demoPts} 个`);
+  const demoAns = await prisma.answerRecord.count({
+    where: { submission: { assignment: { source: "demo" } } },
+  });
+  assert(demoAns === genJ.answers, `DB 中演示作答条数与响应一致（${demoAns}）`);
   const needsReview = await prisma.answerRecord.count({ where: { reviewStatus: "needs_review" } });
-  assert(needsReview === 240, `DB 中待复核记录 240 条（实际 ${needsReview}）`);
+  assert(
+    needsReview === countBefore + genJ.pendingReview,
+    `DB 中待复核 = 生成前 ${countBefore} + 演示 ${genJ.pendingReview}（实际 ${needsReview}）`
+  );
   const qGen = await (await t.fetch(`/api/review-queue?countOnly=1`)).json();
-  assert(Number(qGen.count) === countBefore + 240, `复核队列含演示待复核项（${qGen.count}）`);
+  assert(Number(qGen.count) === countBefore + genJ.pendingReview, `复核队列含演示待复核项（${qGen.count}）`);
 
   // 幂等：重复生成不翻倍
   const gen2 = await ad.fetch("/api/admin/demo", { method: "POST", body: JSON.stringify({ mode: "generate" }) });
   assert(gen2.status === 200, `重复生成 ${gen2.status}`);
   const gen2J = await gen2.json();
-  assert(gen2J.assignments === 15, "重复生成后仍是 15 份（幂等）");
-  assert((await prisma.assignment.count({ where: { source: "demo" } })) === 15, "DB 中 demo 作业未翻倍");
+  assert(gen2J.assignments === genJ.assignments, "重复生成后作业数不变（幂等）");
+  assert(
+    (await prisma.assignment.count({ where: { source: "demo" } })) === genJ.assignments,
+    "DB 中 demo 作业未翻倍"
+  );
 
   // 隔离：真实作业不受影响
   const realAsg = await prisma.assignment.findUnique({ where: { id: assignmentId } });
@@ -389,7 +451,7 @@ async function main() {
     console.log("  （该班暂无未攻克错题，跳过聚合细节断言）");
   }
 
-  console.log("\n== 16. 分层升降建议与一键采纳 ==");
+  console.log("\n== 17. 分层升降建议与一键采纳 ==");
   const tierRes = await t.fetch(`/api/teacher/tiers?subject=math&classId=${cls.id}`);
   assert(tierRes.status === 200, `分层建议接口 ${tierRes.status}`);
   const tierJ = (await tierRes.json()) as {
@@ -441,7 +503,7 @@ async function main() {
   const me3 = dash3.students.find((x) => x.id === student.id);
   assert(me3 && me3.tier === me1!.tier && me3.tierOverride === null, "清除后恢复自动分层");
 
-  console.log("\n== 17. AI 班级学情周报 ==");
+  console.log("\n== 18. AI 班级学情周报 ==");
   const wrRes = await t.fetch("/api/ai/weekly-report", {
     method: "POST",
     body: JSON.stringify({ subjectCode: "math", classId: cls.id }),
@@ -470,7 +532,7 @@ async function main() {
   });
   assert(wrForbidden.status === 403, `学生会话调用周报被拒（实际 ${wrForbidden.status}）`);
 
-  console.log("\n== 18. 家长只读分享链接 ==");
+  console.log("\n== 19. 家长只读分享链接 ==");
   const mk = await t.fetch("/api/teacher/share-links", {
     method: "POST",
     body: JSON.stringify({ studentId: student.id }),
@@ -524,7 +586,105 @@ async function main() {
   const gJ = (await gRes.json()) as { badges: unknown[]; stats: { submissions: number } };
   assert(Array.isArray(gJ.badges) && gJ.badges.length === 4 && typeof gJ.stats.submissions === "number", "growth 响应形状不变");
 
-  console.log("\n✅ 全部端到端断言通过：闭环（布置 → 作答 → 批改 → 掌握度 → 错题 → 看板）+ F1 复核队列 + F2 补救聚合 + 分层升降 + 周报 + 家长分享验证成功！");
+  console.log("\n== 16. 学习目标申诉闭环（提交 → 锁定 → 复核 → 学生可见） ==");
+  const g1Res = await s.fetch("/api/goals", {
+    method: "POST",
+    body: JSON.stringify({ content: "E2E 申诉闭环目标（驳回路径）" }),
+  });
+  assert(g1Res.status === 201, `目标设定 ${g1Res.status}`);
+  const goal1 = await g1Res.json();
+  assert(goal1.appealStatus === "NONE" && goal1.challenged === false, "新目标申诉状态为 NONE");
+
+  // 理由选填：不填也能提交申诉
+  const ap1 = await s.fetch(`/api/goals/${goal1.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ action: "appeal" }),
+  });
+  const ap1J = await ap1.json();
+  assert(ap1.status === 200 && ap1J.appealStatus === "PENDING", `不填理由也可申诉（${ap1.status}）`);
+  assert(ap1J.challenged === true, "申诉后 challenged 派生为 true");
+
+  const lockRes = await s.fetch(`/api/goals/${goal1.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ done: true }),
+  });
+  assert(lockRes.status === 400, `复核中标记完成被服务端拒绝 400（实际 ${lockRes.status}）`);
+  const locked = await prisma.learningGoal.findUniqueOrThrow({ where: { id: goal1.id } });
+  assert(locked.done === false, "库中目标仍为未完成（已锁定）");
+
+  const dupAp = await s.fetch(`/api/goals/${goal1.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ action: "appeal", reason: "重复提交" }),
+  });
+  assert(dupAp.status === 400, `重复申诉被拒 400（实际 ${dupAp.status}）`);
+
+  const qList = await t.fetch(`/api/teacher/appeals?classId=${cls.id}`);
+  const qListJ = (await qList.json()) as { items: { id: string; studentName: string }[] };
+  assert(qListJ.items.some((x) => x.id === goal1.id), "教师申诉队列中出现该目标");
+  const qCount = await (await t.fetch("/api/teacher/appeals?countOnly=1")).json();
+  assert(Number(qCount.count) >= 1, `申诉计数 >= 1（实际 ${qCount.count}）`);
+  const sDenied = await s.fetch("/api/teacher/appeals");
+  assert(sDenied.status === 403, `学生访问教师申诉接口被拒 ${sDenied.status}`);
+
+  // 路径一：驳回 → 目标恢复正常 → 学生可自行标记完成
+  const rej = await t.fetch(`/api/teacher/appeals/${goal1.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ decision: "reject", reply: "E2E 驳回：请先完成本周练习" }),
+  });
+  const rejJ = await rej.json();
+  assert(rej.status === 200 && rejJ.appealStatus === "REJECTED" && rejJ.done === false, "驳回后 REJECTED 且目标仍未完成");
+  const rejAgain = await t.fetch(`/api/teacher/appeals/${goal1.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ decision: "accept" }),
+  });
+  assert(rejAgain.status === 400, `已处理的申诉不可重复处理 400（实际 ${rejAgain.status}）`);
+
+  const stuGoals = (await (await s.fetch("/api/goals")).json()) as {
+    id: string;
+    appealReply: string | null;
+  }[];
+  assert(
+    stuGoals.find((x) => x.id === goal1.id)?.appealReply === "E2E 驳回：请先完成本周练习",
+    "学生端可见教师回复"
+  );
+  const doneRes = await s.fetch(`/api/goals/${goal1.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ done: true }),
+  });
+  assert(doneRes.status === 200 && (await doneRes.json()).done === true, "驳回后学生可自行标记完成");
+  const afterDone = await s.fetch(`/api/goals/${goal1.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ action: "appeal", reason: "x" }),
+  });
+  assert(afterDone.status === 400, `已完成目标不能申诉 400（实际 ${afterDone.status}）`);
+
+  // 路径二：申诉 → 采纳 → 目标自动视为达成
+  const goal2 = await (
+    await s.fetch("/api/goals", {
+      method: "POST",
+      body: JSON.stringify({ content: "E2E 申诉闭环目标（采纳路径）" }),
+    })
+  ).json();
+  await s.fetch(`/api/goals/${goal2.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ action: "appeal", reason: "E2E：申请直接视为达成" }),
+  });
+  const acc = await t.fetch(`/api/teacher/appeals/${goal2.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ decision: "accept", reply: "E2E 同意，已视为达成" }),
+  });
+  const accJ = await acc.json();
+  assert(acc.status === 200 && accJ.appealStatus === "ACCEPTED" && accJ.done === true, "采纳后 ACCEPTED 且目标已达成");
+  assert(
+    !((await (await t.fetch(`/api/teacher/appeals?classId=${cls.id}`)).json()).items as { id: string }[]).some(
+      (x) => x.id === goal2.id
+    ),
+    "采纳后从待复核申诉队列移除"
+  );
+
+  console.log(
+    "\n✅ 全部端到端断言通过：闭环（布置 → 作答 → 批改 → 掌握度 → 错题 → 看板）+ F1 复核队列 + F2 补救聚合 + 学习目标申诉闭环 + 分层升降 + 周报 + 家长分享验证成功！"
+  );
 }
 
 main()

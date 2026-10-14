@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Check, CheckCircle2, ClipboardCheck, ExternalLink, Loader2, X, XCircle } from "lucide-react";
+import { Check, CheckCircle2, ClipboardCheck, ExternalLink, Loader2, MessageSquareWarning, X, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/app/empty-state";
@@ -37,6 +38,19 @@ interface QueueItem {
   improvement: string | null;
 }
 
+/** 学习目标申诉（第二个队列，与作业复核分开） */
+interface AppealItem {
+  id: string;
+  studentId: string;
+  studentName: string;
+  className: string;
+  content: string;
+  kpId: string | null;
+  done: boolean;
+  appealReason: string | null;
+  appealRequestedAt: string | null;
+}
+
 const TYPE_LABEL: Record<string, string> = {
   SINGLE_CHOICE: "选择题",
   FILL_BLANK: "填空题",
@@ -50,6 +64,14 @@ export default function ReviewPage() {
   // 改判表单：recordId -> { isCorrect, scorePct, errorAnalysis, open }
   const [forms, setForms] = useState<Record<string, { isCorrect: boolean; scorePct: number; errorAnalysis: string; open: boolean }>>({});
 
+  // 目标申诉队列：状态与作业队列完全独立，避免任一队列出错/加载中时把另一块也清空
+  const [appeals, setAppeals] = useState<AppealItem[] | null>(null);
+  const [appealError, setAppealError] = useState("");
+  const [classes, setClasses] = useState<{ id: string; name: string }[]>([]);
+  const [classFilter, setClassFilter] = useState("all");
+  const [appealActing, setAppealActing] = useState<Record<string, boolean>>({});
+  const [appealReplies, setAppealReplies] = useState<Record<string, string>>({});
+
   const load = useCallback(() => {
     fetch("/api/review-queue")
       .then(async (r) => {
@@ -60,9 +82,27 @@ export default function ReviewPage() {
       .catch((e) => setError(e.message));
   }, []);
 
+  const loadAppeals = useCallback((cid: string) => {
+    setAppeals(null);
+    setAppealError("");
+    const qs = cid && cid !== "all" ? `?classId=${cid}` : "";
+    fetch(`/api/teacher/appeals${qs}`)
+      .then(async (r) => {
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error ?? "加载失败");
+        setAppeals(j.items);
+      })
+      .catch((e) => setAppealError(e.message));
+  }, []);
+
   useEffect(() => {
     load();
-  }, [load]);
+    loadAppeals("all");
+    fetch("/api/classes")
+      .then((r) => r.json())
+      .then((c) => setClasses(Array.isArray(c) ? c : []))
+      .catch(() => {});
+  }, [load, loadAppeals]);
 
   function toggleForm(rec: QueueItem) {
     setForms((p) => ({
@@ -127,21 +167,45 @@ export default function ReviewPage() {
     }
   }
 
-  if (error) return <p className="text-destructive">{error}</p>;
-  if (!items) return <Skeleton className="h-64" />;
+  async function resolveAppeal(item: AppealItem, decision: "accept" | "reject") {
+    setAppealActing((p) => ({ ...p, [item.id]: true }));
+    try {
+      const r = await fetch(`/api/teacher/appeals/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision, reply: appealReplies[item.id] ?? "" }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? "操作失败");
+      toast.success(
+        decision === "accept"
+          ? `已采纳申诉，目标已视为达成（${item.studentName}）`
+          : `已驳回申诉（${item.studentName}）`
+      );
+      setAppeals((list) => list?.filter((x) => x.id !== item.id) ?? null);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "操作失败");
+    } finally {
+      setAppealActing((p) => ({ ...p, [item.id]: false }));
+    }
+  }
 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
         <ClipboardCheck className="h-5 w-5" />
         <h1 className="text-xl font-semibold">待复核</h1>
-        <Badge variant="secondary">{items.length}</Badge>
+        <Badge variant="secondary">{(items?.length ?? 0) + (appeals?.length ?? 0)}</Badge>
         <p className="text-sm text-muted-foreground">
-          AI 批改置信度不足或未批改的解答题作答，需要教师复核
+          AI 批改置信度不足的作答，以及学生对学习目标提出的申诉，都在这里处理
         </p>
       </div>
 
-      {!items.length ? (
+      {error ? (
+        <p className="text-destructive">{error}</p>
+      ) : !items ? (
+        <Skeleton className="h-64" />
+      ) : !items.length ? (
         <EmptyState title="暂无待复核作答" hint="低置信度或未批改的解答题会出现在这里" />
       ) : (
         <div className="space-y-3">
@@ -293,6 +357,95 @@ export default function ReviewPage() {
                       </div>
                     </div>
                   ) : null}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 第二个队列：学习目标申诉 */}
+      <div className="flex flex-wrap items-center gap-2 pt-2">
+        <MessageSquareWarning className="h-5 w-5" />
+        <h2 className="text-xl font-semibold">目标申诉</h2>
+        <Badge variant="secondary">{appeals?.length ?? 0}</Badge>
+        <Select
+          value={classFilter}
+          onValueChange={(v) => {
+            setClassFilter(v);
+            loadAppeals(v);
+          }}
+        >
+          <SelectTrigger className="ml-auto w-44">
+            <SelectValue placeholder="选择班级" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">全部班级</SelectItem>
+            {classes.map((c) => (
+              <SelectItem key={c.id} value={c.id}>
+                {c.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {appealError ? (
+        <p className="text-destructive">{appealError}</p>
+      ) : !appeals ? (
+        <Skeleton className="h-40" />
+      ) : !appeals.length ? (
+        <EmptyState title="暂无目标申诉" hint="学生对学习目标提出申诉后会出现在这里" />
+      ) : (
+        <div className="space-y-3">
+          {appeals.map((item) => {
+            const busy = appealActing[item.id];
+            return (
+              <Card key={item.id}>
+                <CardHeader className="pb-2">
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                    <span className="font-medium">{item.studentName}</span>
+                    <Badge variant="outline">{item.className}</Badge>
+                    <Link
+                      href={`/teacher/students/${item.studentId}`}
+                      className="text-muted-foreground hover:underline"
+                    >
+                      查看学生
+                      <ExternalLink className="ml-0.5 inline h-3 w-3" />
+                    </Link>
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      {item.appealRequestedAt ? `${fmtDateTime(item.appealRequestedAt)} 申诉` : "已申诉"}
+                    </span>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm">
+                  <div className="rounded-md border p-2.5">{item.content}</div>
+                  <div className="rounded-md bg-muted/50 p-2">
+                    <span className="font-medium">申诉理由：</span>
+                    {item.appealReason || "（未填写）"}
+                  </div>
+                  <Textarea
+                    placeholder="回复/说明（可选，学生可见）"
+                    value={appealReplies[item.id] ?? ""}
+                    onChange={(e) =>
+                      setAppealReplies((p) => ({ ...p, [item.id]: e.target.value }))
+                    }
+                  />
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <Button size="sm" disabled={busy} onClick={() => resolveAppeal(item, "accept")}>
+                      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                      采纳（视为达成）
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => resolveAppeal(item, "reject")}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      驳回
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             );

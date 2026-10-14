@@ -247,9 +247,21 @@ export async function clearDemoData(): Promise<void> {
     await prisma.submission.deleteMany({ where: { assignmentId: { in: assignmentIds } } });
     await prisma.assignmentQuestion.deleteMany({ where: { assignmentId: { in: assignmentIds } } });
     await prisma.assignment.deleteMany({ where: { id: { in: assignmentIds } } });
-    // 题干预留前缀兜底：半途崩溃遗留的孤儿演示题也一并清掉
-    await prisma.question.deleteMany({ where: { stem: { startsWith: DEMO_STEM_PREFIX } } });
   }
+
+  // 题干预留前缀兜底：半途崩溃遗留的孤儿演示题也一并清掉。
+  // 放在 if 之外——演示作业已删但题目残留时同样要清。
+  // 演示题会出现在题库里（/api/questions 未按前缀过滤），真实作业可能选到它们；
+  // 被引用时删除会撞 FK RESTRICT（AssignmentQuestion_questionId_fkey）导致整个 clear 500，
+  // 所以只删无人引用的题，被真实作业/作答引用的留下来。
+  await prisma.question.deleteMany({
+    where: {
+      stem: { startsWith: DEMO_STEM_PREFIX },
+      assignmentQuestions: { none: {} },
+      answerRecords: { none: {} },
+      wrongQuestions: { none: {} },
+    },
+  });
 
   // 演示掌握度历史点删除 + 受影响 Mastery 回退为剩余最新值（无则 0.3）
   const demoPoints = await prisma.masteryPoint.findMany({
