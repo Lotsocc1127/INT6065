@@ -56,7 +56,13 @@ class Session {
     });
     this.apply(res);
     const j = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
-    if (j.error) throw new Error(`登录失败: ${j.error}`);
+    // 密码错时 next-auth 返回 200 + 带 error 参数的 url（不返回 error 字段、也不抛 4xx），
+    // 只判 j.error 会把失败当成功，症状是「登录没报错、后续请求全 401」。
+    // 以是否真拿到 session cookie 为准。
+    const token = [...this.cookies.keys()].find((k) => k.endsWith("session-token"));
+    if (j.error || !token || (j.url ?? "").includes("error=")) {
+      throw new Error(`登录失败: ${j.error ?? j.url ?? "未拿到 session cookie"}`);
+    }
     return j;
   }
 }
@@ -66,8 +72,30 @@ function assert(cond: unknown, msg: string) {
   console.log(`  ✓ ${msg}`);
 }
 
+/**
+ * 共享 Neon 库是多人共用的，常有组员自建账号（密码不是 123456）。
+ * `findFirst({ role })` 可能选中这类账号，导致第 1 组登录就 401、整轮跑不完。
+ * 这里按「能否用默认密码登录」逐个探测，选第一个能登上的账号。
+ */
+async function findLoginable(role: "TEACHER" | "ADMIN") {
+  const candidates = await prisma.user.findMany({ where: { role }, select: { id: true, name: true } });
+  for (const u of candidates) {
+    try {
+      await new Session().login(u.id);
+      return u;
+    } catch {
+      // 换下一个候选
+    }
+  }
+  throw new Error(
+    `没有能用默认密码（123456）登录的 ${role} 账号；候选：${
+      candidates.map((c) => c.name).join("、") || "（该库无此类账号，请先 npx prisma db seed）"
+    }`
+  );
+}
+
 async function main() {
-  const teacher = await prisma.user.findFirstOrThrow({ where: { role: "TEACHER" } });
+  const teacher = await findLoginable("TEACHER");
   const student = await prisma.user.findFirstOrThrow({
     where: { role: "STUDENT", classId: { not: null } },
     orderBy: { name: "asc" },
@@ -304,11 +332,24 @@ async function main() {
   }
 
   console.log("\n== 14. F4 应用内一键演示数据 ==");
-  const admin = await prisma.user.findFirstOrThrow({ where: { role: "ADMIN" } });
+  const admin = await findLoginable("ADMIN");
   const ad = new Session();
   await ad.login(admin.id);
   const qBefore = await (await t.fetch(`/api/review-queue?countOnly=1`)).json();
   const countBefore = Number(qBefore.count) || 0;
+
+  // 生成量 = 轮数 × 班级人数，班级人数随共享库漂移（组员增删过学生），
+  // 所以期望值按「生成器会选中的那 3 个班」的实际人数推导，不写死 450/1350/240。
+  const rounds = 5;
+  const demoClasses = (
+    await prisma.class.findMany({
+      include: { _count: { select: { students: { where: { role: "STUDENT" } } } } },
+    })
+  )
+    .filter((c) => c._count.students > 0)
+    .slice(0, 3);
+  const demoStudents = demoClasses.reduce((n, c) => n + c._count.students, 0);
+  assert(demoClasses.length === 3 && demoStudents > 0, `可推导演示规模：${demoClasses.length} 班 / ${demoStudents} 人`);
 
   const gen = await ad.fetch("/api/admin/demo", { method: "POST", body: JSON.stringify({ mode: "generate" }) });
   assert(gen.status === 200, `生成演示数据 ${gen.status}`);
@@ -321,27 +362,48 @@ async function main() {
     pendingReview: number;
   };
   assert(genJ.mode === "generate", "generate 响应 mode 正确");
-  assert(genJ.classes === 3, `覆盖 3 个班级（实际 ${genJ.classes}）`);
-  assert(genJ.assignments === 15, `生成 15 份演示作业（实际 ${genJ.assignments}）`);
-  assert(genJ.submissions === 450, `生成 450 份提交（实际 ${genJ.submissions}）`);
-  assert(genJ.answers === 1350, `生成 1350 条作答（实际 ${genJ.answers}）`);
-  assert(genJ.pendingReview === 240, `生成 240 条待复核（实际 ${genJ.pendingReview}）`);
+  assert(genJ.classes === demoClasses.length, `覆盖 ${demoClasses.length} 个班级（实际 ${genJ.classes}）`);
+  assert(
+    genJ.assignments === rounds * demoClasses.length,
+    `生成 ${rounds * demoClasses.length} 份演示作业（实际 ${genJ.assignments}）`
+  );
+  assert(
+    genJ.submissions === rounds * demoStudents,
+    `生成 ${rounds * demoStudents} 份提交（= ${rounds} 轮 × ${demoStudents} 人，实际 ${genJ.submissions}）`
+  );
+  // 每次作业每生可见题 = 2 道无层级题 + 1 道本层级题
+  assert(genJ.answers === 3 * genJ.submissions, `每份提交 3 条作答（实际 ${genJ.answers}/${genJ.submissions}）`);
+  // 解答题每班 2-3 轮各 1 道，且恒为可见（tier 为空）；所有解答题作答都进待复核
+  assert(
+    genJ.pendingReview >= 2 * demoStudents && genJ.pendingReview <= 3 * demoStudents,
+    `待复核 = 解答题作答，落在 [2×${demoStudents}, 3×${demoStudents}] 内（实际 ${genJ.pendingReview}）`
+  );
 
   const demoAsg = await prisma.assignment.count({ where: { source: "demo" } });
-  assert(demoAsg === 15, `DB 中 demo 作业 15 份（实际 ${demoAsg}）`);
+  assert(demoAsg === genJ.assignments, `DB 中 demo 作业 ${genJ.assignments} 份（实际 ${demoAsg}）`);
   const demoPts = await prisma.masteryPoint.count({ where: { source: "demo" } });
   assert(demoPts > 0, `DB 中 demo 掌握度历史点 ${demoPts} 个`);
+  const demoAns = await prisma.answerRecord.count({
+    where: { submission: { assignment: { source: "demo" } } },
+  });
+  assert(demoAns === genJ.answers, `DB 中演示作答条数与响应一致（${demoAns}）`);
   const needsReview = await prisma.answerRecord.count({ where: { reviewStatus: "needs_review" } });
-  assert(needsReview === 240, `DB 中待复核记录 240 条（实际 ${needsReview}）`);
+  assert(
+    needsReview === countBefore + genJ.pendingReview,
+    `DB 中待复核 = 生成前 ${countBefore} + 演示 ${genJ.pendingReview}（实际 ${needsReview}）`
+  );
   const qGen = await (await t.fetch(`/api/review-queue?countOnly=1`)).json();
-  assert(Number(qGen.count) === countBefore + 240, `复核队列含演示待复核项（${qGen.count}）`);
+  assert(Number(qGen.count) === countBefore + genJ.pendingReview, `复核队列含演示待复核项（${qGen.count}）`);
 
   // 幂等：重复生成不翻倍
   const gen2 = await ad.fetch("/api/admin/demo", { method: "POST", body: JSON.stringify({ mode: "generate" }) });
   assert(gen2.status === 200, `重复生成 ${gen2.status}`);
   const gen2J = await gen2.json();
-  assert(gen2J.assignments === 15, "重复生成后仍是 15 份（幂等）");
-  assert((await prisma.assignment.count({ where: { source: "demo" } })) === 15, "DB 中 demo 作业未翻倍");
+  assert(gen2J.assignments === genJ.assignments, "重复生成后作业数不变（幂等）");
+  assert(
+    (await prisma.assignment.count({ where: { source: "demo" } })) === genJ.assignments,
+    "DB 中 demo 作业未翻倍"
+  );
 
   // 隔离：真实作业不受影响
   const realAsg = await prisma.assignment.findUnique({ where: { id: assignmentId } });
