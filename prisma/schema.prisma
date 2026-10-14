@@ -38,10 +38,12 @@ model User {
   password  String
   classId   String?
   class     Class?  @relation(fields: [classId], references: [id])
+  tierOverride String? // "foundation"|"intermediate"|"advanced"：教师手动锁定分层；null = 自动计算
   answers       AnswerRecord[]
   masteries     Mastery[]
   goals         LearningGoal[]
   submissions   Submission[]
+  shareLinks    ShareLink[]
 }
 
 model Class {
@@ -194,4 +196,18 @@ model LearningGoal {
   challenged Boolean  @default(false) // 学生对标签提出异议
   createdAt  DateTime @default(now())
   student    User     @relation(fields: [studentId], references: [id])
+}
+
+model ShareLink {
+  id           String   @id @default(cuid())
+  tokenHash    String   @unique // 原始 token 的 SHA-256 hex；raw 永不落库
+  studentId    String
+  student      User     @relation(fields: [studentId], references: [id])
+  createdBy    String // 教师/管理员 user id（不建关系，避免双 FK 到 User）
+  createdAt    DateTime @default(now())
+  revoked      Boolean  @default(false)
+  revokedAt    DateTime?
+  lastViewedAt DateTime?
+
+  @@index([studentId])
 }
