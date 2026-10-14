@@ -303,6 +303,61 @@ async function main() {
     console.log("  （已配置 LLM Key，跳过无 Key 分支断言；解答题走 AI 批改路径）");
   }
 
+  console.log("\n== 14. F4 应用内一键演示数据 ==");
+  const admin = await prisma.user.findFirstOrThrow({ where: { role: "ADMIN" } });
+  const ad = new Session();
+  await ad.login(admin.id);
+  const qBefore = await (await t.fetch(`/api/review-queue?countOnly=1`)).json();
+  const countBefore = Number(qBefore.count) || 0;
+
+  const gen = await ad.fetch("/api/admin/demo", { method: "POST", body: JSON.stringify({ mode: "generate" }) });
+  assert(gen.status === 200, `生成演示数据 ${gen.status}`);
+  const genJ = (await gen.json()) as {
+    mode: string;
+    classes: number;
+    assignments: number;
+    submissions: number;
+    answers: number;
+    pendingReview: number;
+  };
+  assert(genJ.mode === "generate", "generate 响应 mode 正确");
+  assert(genJ.classes === 3, `覆盖 3 个班级（实际 ${genJ.classes}）`);
+  assert(genJ.assignments === 15, `生成 15 份演示作业（实际 ${genJ.assignments}）`);
+  assert(genJ.submissions === 450, `生成 450 份提交（实际 ${genJ.submissions}）`);
+  assert(genJ.answers === 1350, `生成 1350 条作答（实际 ${genJ.answers}）`);
+  assert(genJ.pendingReview === 240, `生成 240 条待复核（实际 ${genJ.pendingReview}）`);
+
+  const demoAsg = await prisma.assignment.count({ where: { source: "demo" } });
+  assert(demoAsg === 15, `DB 中 demo 作业 15 份（实际 ${demoAsg}）`);
+  const demoPts = await prisma.masteryPoint.count({ where: { source: "demo" } });
+  assert(demoPts > 0, `DB 中 demo 掌握度历史点 ${demoPts} 个`);
+  const needsReview = await prisma.answerRecord.count({ where: { reviewStatus: "needs_review" } });
+  assert(needsReview === 240, `DB 中待复核记录 240 条（实际 ${needsReview}）`);
+  const qGen = await (await t.fetch(`/api/review-queue?countOnly=1`)).json();
+  assert(Number(qGen.count) === countBefore + 240, `复核队列含演示待复核项（${qGen.count}）`);
+
+  // 幂等：重复生成不翻倍
+  const gen2 = await ad.fetch("/api/admin/demo", { method: "POST", body: JSON.stringify({ mode: "generate" }) });
+  assert(gen2.status === 200, `重复生成 ${gen2.status}`);
+  const gen2J = await gen2.json();
+  assert(gen2J.assignments === 15, "重复生成后仍是 15 份（幂等）");
+  assert((await prisma.assignment.count({ where: { source: "demo" } })) === 15, "DB 中 demo 作业未翻倍");
+
+  // 隔离：真实作业不受影响
+  const realAsg = await prisma.assignment.findUnique({ where: { id: assignmentId } });
+  assert(Boolean(realAsg) && realAsg!.source === null, "E2E 真实作业仍在且无 source 标记");
+
+  // 清除：demo 数据归零、队列恢复、掌握度回退由 test-demo 覆盖
+  const clear = await ad.fetch("/api/admin/demo", { method: "POST", body: JSON.stringify({ mode: "clear" }) });
+  assert(clear.status === 200, `清除演示数据 ${clear.status}`);
+  const clearJ = await clear.json();
+  assert(clearJ.mode === "clear" && clearJ.cleared === true, "clear 响应正确");
+  assert((await prisma.assignment.count({ where: { source: "demo" } })) === 0, "DB 中 demo 作业已清零");
+  assert((await prisma.masteryPoint.count({ where: { source: "demo" } })) === 0, "demo 掌握度历史点已清零");
+  const qAfter = await (await t.fetch(`/api/review-queue?countOnly=1`)).json();
+  assert(Number(qAfter.count) === countBefore, `复核队列恢复（${qAfter.count}）`);
+  assert(Boolean(await prisma.assignment.findUnique({ where: { id: assignmentId } })), "清除后真实作业仍在");
+
   console.log("\n== 15. F2 变式补救作业 ==");
   const kpsRes = await t.fetch(`/api/remedial/kps?subject=math&classId=${cls.id}`);
   assert(kpsRes.status === 200, `补救知识点聚合 ${kpsRes.status}`);
