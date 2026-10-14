@@ -23,15 +23,18 @@ npm run dev                 # http://localhost:3000
 
 ### 在其他电脑上运行（Mac / Linux）
 
-代码与 SQLite 数据（`prisma/dev.db`）均跨平台，但 **`node_modules` 与 `.next` 不可直接拷贝**（含平台相关二进制/缓存）：
+代码跨平台；`node_modules` 与 `.next` 不可直接拷贝（含平台相关二进制/缓存），用 Git 传输即可（.gitignore 已排除）。数据库在 Neon 云端，无需携带数据文件：
 
 ```bash
-# 推荐用 Git 传输（.gitignore 已排除上述目录）；或打包时排除 node_modules、.next
-npm install            # 自动下载对应平台的 Prisma 引擎
-npx prisma db push     # 未携带 dev.db 时执行；携带了则跳过
-npx prisma db seed     # 同上
+git clone https://github.com/Lotsocc1127/INT6065.git
+cd INT6065
+npm install
+# 把 .env 从原机器拷来（或按 .env.example 填写：Neon 双连接串 + LLM Key，见上方「数据库」节）
+npx prisma generate   # Windows 上此步需先停 dev server（DLL 占用）；macOS/Linux 无此限制
 npm run dev
 ```
+
+验证：浏览器打开 `/login` 能登录即数据库连通；可再跑 `npx tsx scripts/browser-check.ts` 做两端页面只读点检。
 
 ### 配置 LLM（必填，AI 功能真实调用、无写死结果）
 
