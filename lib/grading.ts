@@ -203,7 +203,7 @@ export async function processSubmission(opts: {
   const wqMap = new Map(wqRows.map((w) => [w.questionId, w]));
 
   // 批量事务：写提交、更新掌握度、写错题
-  const ops: Prisma.PrismaPromise<any>[] = [];
+  const ops: Prisma.PrismaPromise<unknown>[] = [];
   ops.push(
     prisma.submission.create({
       data: {
