@@ -2,13 +2,22 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Flag, MessageSquareWarning, Plus } from "lucide-react";
+import { CheckCircle2, Flag, MessageSquareWarning, Plus, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import { SubjectSwitcher, type SubjectInfo } from "@/components/app/subject-switcher";
 import {
   Select,
@@ -26,7 +35,9 @@ interface Goal {
   content: string;
   kpId: string | null;
   done: boolean;
-  challenged: boolean;
+  appealStatus: "NONE" | "PENDING" | "ACCEPTED" | "REJECTED";
+  appealReason: string | null;
+  appealReply: string | null;
   createdAt: string;
 }
 interface KpInfo {
@@ -45,6 +56,9 @@ function GoalsPage() {
   const [kpId, setKpId] = useState("none");
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState("");
+  const [appealTarget, setAppealTarget] = useState<Goal | null>(null);
+  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     load();
@@ -99,21 +113,34 @@ function GoalsPage() {
     }
   }
 
-  async function patch(g: Goal, data: { done?: boolean; challenged?: boolean }) {
+  async function patch(g: Goal, body: { done?: boolean; action?: "appeal"; reason?: string }) {
     try {
       const r = await fetch(`/api/goals/${g.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify(body),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error ?? "操作失败");
       setGoals((prev) =>
         (prev ?? []).map((x) => (x.id === g.id ? { ...x, ...j } : x))
       );
-      if (data.challenged) toast.success("已提交申诉，老师会复核这个标签");
+      if (body.action === "appeal") toast.success("已提交申诉，老师会复核这个目标");
+      return true;
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "操作失败");
+      return false;
+    }
+  }
+
+  async function submitAppeal() {
+    if (!appealTarget) return;
+    setSubmitting(true);
+    const okDone = await patch(appealTarget, { action: "appeal", reason: reason.trim() });
+    setSubmitting(false);
+    if (okDone) {
+      setAppealTarget(null);
+      setReason("");
     }
   }
 
@@ -178,28 +205,51 @@ function GoalsPage() {
                   </div>
                   <div className="mt-1 flex flex-wrap gap-1.5">
                     {g.done ? <Badge variant="secondary">已完成</Badge> : <Badge variant="outline">进行中</Badge>}
-                    {g.challenged ? (
+                    {g.appealStatus === "PENDING" ? (
                       <Badge variant="destructive" className="gap-1">
                         <MessageSquareWarning className="h-3 w-3" />
                         已申诉 · 待教师复核
                       </Badge>
                     ) : null}
+                    {g.appealStatus === "ACCEPTED" ? (
+                      <Badge variant="secondary" className="gap-1">
+                        <CheckCircle2 className="h-3 w-3" />
+                        申诉已通过 · 视为达成
+                      </Badge>
+                    ) : null}
+                    {g.appealStatus === "REJECTED" ? (
+                      <Badge variant="outline" className="gap-1">
+                        <XCircle className="h-3 w-3" />
+                        申诉未通过
+                      </Badge>
+                    ) : null}
                   </div>
+                  {g.appealReason ? (
+                    <div className="mt-1.5 text-xs text-muted-foreground">我的申诉理由：{g.appealReason}</div>
+                  ) : null}
+                  {g.appealReply ? (
+                    <div className="mt-1.5 rounded-md bg-muted/50 p-2 text-xs text-muted-foreground">
+                      教师回复：{g.appealReply}
+                    </div>
+                  ) : null}
                 </div>
                 <div className="flex shrink-0 gap-2">
-                  {!g.done ? (
+                  {!g.done && g.appealStatus !== "PENDING" ? (
                     <Button size="sm" variant="outline" onClick={() => patch(g, { done: true })}>
                       标记完成
                     </Button>
                   ) : null}
-                  {!g.challenged ? (
+                  {!g.done && (g.appealStatus === "NONE" || g.appealStatus === "REJECTED") ? (
                     <Button
                       size="sm"
                       variant="ghost"
                       className="text-destructive"
-                      onClick={() => patch(g, { challenged: true })}
+                      onClick={() => {
+                        setReason("");
+                        setAppealTarget(g);
+                      }}
                     >
-                      提出申诉
+                      {g.appealStatus === "REJECTED" ? "再次申诉" : "提出申诉"}
                     </Button>
                   ) : null}
                 </div>
@@ -208,6 +258,50 @@ function GoalsPage() {
           </CardContent>
         </Card>
       ) : null}
+
+      <Dialog
+        open={appealTarget !== null}
+        onOpenChange={(o) => {
+          if (!o) {
+            setAppealTarget(null);
+            setReason("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>对学习目标提出申诉</DialogTitle>
+            <DialogDescription>
+              说明你认为这个目标不合理的原因，老师会复核并回复。复核期间该目标暂不能标记完成。
+            </DialogDescription>
+          </DialogHeader>
+          {appealTarget ? (
+            <div className="space-y-3">
+              <div className="rounded-md border bg-muted/30 p-2.5 text-sm">{appealTarget.content}</div>
+              <Textarea
+                rows={3}
+                placeholder="如：我已经掌握了这部分内容，希望调整为……（选填）"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+              />
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setAppealTarget(null);
+                setReason("");
+              }}
+            >
+              取消
+            </Button>
+            <Button onClick={submitAppeal} disabled={submitting}>
+              {submitting ? "提交中…" : "提交申诉"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

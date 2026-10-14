@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api";
 import { requireApiUser } from "@/lib/auth";
+import { goalDto } from "@/lib/goals";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -13,16 +14,7 @@ export async function GET() {
       where: { studentId: session.user.id },
       orderBy: { createdAt: "desc" },
     });
-    return ok(
-      goals.map((g) => ({
-        id: g.id,
-        content: g.content,
-        kpId: g.kpId,
-        done: g.done,
-        challenged: g.challenged,
-        createdAt: g.createdAt,
-      }))
-    );
+    return ok(goals.map(goalDto));
   } catch (e) {
     return fail(e);
   }
@@ -37,7 +29,7 @@ export async function POST(req: NextRequest) {
     const goal = await prisma.learningGoal.create({
       data: { studentId: session.user.id, content, kpId: body?.kpId ?? null },
     });
-    return ok({ id: goal.id, content: goal.content, done: goal.done, challenged: goal.challenged }, 201);
+    return ok(goalDto(goal), 201);
   } catch (e) {
     return fail(e);
   }

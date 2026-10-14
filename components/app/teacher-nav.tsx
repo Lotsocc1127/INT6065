@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BookOpen, ClipboardCheck, ClipboardList, FilePlus2, Sparkles, Users2, type LucideIcon } from "lucide-react";
+import { useSession } from "next-auth/react";
+import { ArrowLeft, BookOpen, ClipboardCheck, ClipboardList, FilePlus2, Sparkles, Users2, type LucideIcon } from "lucide-react";
 import { BrandLogo } from "@/components/app/brand-logo";
 import { GovernanceModal } from "@/components/app/governance-modal";
 import { SettingsMenu } from "@/components/app/settings-menu";
@@ -22,13 +23,18 @@ const LINKS: { href: string; label: string; icon: LucideIcon }[] = [
 
 export function TeacherNav() {
   const pathname = usePathname();
-  // 待复核数量徽章
+  // 管理员也会进 /teacher 预览（见 app/(teacher)/teacher/layout.tsx），需给他一条回管理端的路
+  const { data: session } = useSession();
+  const isAdmin = session?.user?.role === "ADMIN";
+  // 待复核数量徽章 = 作业待复核 + 目标申诉（两个队列在 /teacher/review 同页展示）
   const [reviewCount, setReviewCount] = useState(0);
   useEffect(() => {
-    fetch("/api/review-queue?countOnly=1")
-      .then((r) => r.json())
-      .then((j) => setReviewCount(Number(j.count) || 0))
-      .catch(() => {});
+    Promise.all([
+      fetch("/api/review-queue?countOnly=1").then((r) => r.json()).catch(() => ({})),
+      fetch("/api/teacher/appeals?countOnly=1").then((r) => r.json()).catch(() => ({})),
+    ]).then(([a, b]) =>
+      setReviewCount((Number(a.count) || 0) + (Number(b.count) || 0))
+    );
   }, [pathname]);
   return (
     <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
@@ -47,6 +53,15 @@ export function TeacherNav() {
         </div>
         {/* 手机：整行独立第二行横向滚动；桌面：中间单行 */}
         <nav className="order-3 flex w-full basis-full items-center gap-0.5 overflow-x-auto md:order-2 md:min-w-0 md:w-auto md:flex-1 md:basis-auto">
+          {isAdmin ? (
+            <Link
+              href="/admin"
+              className="flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent"
+            >
+              <ArrowLeft className="h-4 w-4 shrink-0" />
+              返回管理端
+            </Link>
+          ) : null}
           {LINKS.map((l) => (
             <Link
               key={l.href}

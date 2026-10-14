@@ -58,7 +58,9 @@ function DashboardInner() {
   const router = useRouter();
   const pathname = usePathname();
   const subject = searchParams.get("subject") ?? "math";
-  const [classId, setClassId] = useState<string>("");
+  // 班级同样从 URL 派生（与 subject 一致）：若存成本地 state，Select 的 onValueChange
+  // 只 push 了 query 而不改 state，取数 effect 不会重跑，下拉会回弹到原班级
+  const classId = searchParams.get("classId") ?? "";
   const [subjects, setSubjects] = useState<SubjectInfo[]>([]);
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState("");
@@ -82,7 +84,6 @@ function DashboardInner() {
         const j = await r.json();
         if (!r.ok) throw new Error(j.error ?? "加载失败");
         setData(j);
-        setClassId(j.class.id);
       })
       .catch((e) => setError(e.message));
   }, [subject, classId]);

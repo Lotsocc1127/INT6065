@@ -389,7 +389,105 @@ async function main() {
     console.log("  （该班暂无未攻克错题，跳过聚合细节断言）");
   }
 
-  console.log("\n✅ 全部端到端断言通过：闭环（布置 → 作答 → 批改 → 掌握度 → 错题 → 看板）+ F1 复核队列 + F2 补救聚合验证成功！");
+  console.log("\n== 16. 学习目标申诉闭环（提交 → 锁定 → 复核 → 学生可见） ==");
+  const g1Res = await s.fetch("/api/goals", {
+    method: "POST",
+    body: JSON.stringify({ content: "E2E 申诉闭环目标（驳回路径）" }),
+  });
+  assert(g1Res.status === 201, `目标设定 ${g1Res.status}`);
+  const goal1 = await g1Res.json();
+  assert(goal1.appealStatus === "NONE" && goal1.challenged === false, "新目标申诉状态为 NONE");
+
+  // 理由选填：不填也能提交申诉
+  const ap1 = await s.fetch(`/api/goals/${goal1.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ action: "appeal" }),
+  });
+  const ap1J = await ap1.json();
+  assert(ap1.status === 200 && ap1J.appealStatus === "PENDING", `不填理由也可申诉（${ap1.status}）`);
+  assert(ap1J.challenged === true, "申诉后 challenged 派生为 true");
+
+  const lockRes = await s.fetch(`/api/goals/${goal1.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ done: true }),
+  });
+  assert(lockRes.status === 400, `复核中标记完成被服务端拒绝 400（实际 ${lockRes.status}）`);
+  const locked = await prisma.learningGoal.findUniqueOrThrow({ where: { id: goal1.id } });
+  assert(locked.done === false, "库中目标仍为未完成（已锁定）");
+
+  const dupAp = await s.fetch(`/api/goals/${goal1.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ action: "appeal", reason: "重复提交" }),
+  });
+  assert(dupAp.status === 400, `重复申诉被拒 400（实际 ${dupAp.status}）`);
+
+  const qList = await t.fetch(`/api/teacher/appeals?classId=${cls.id}`);
+  const qListJ = (await qList.json()) as { items: { id: string; studentName: string }[] };
+  assert(qListJ.items.some((x) => x.id === goal1.id), "教师申诉队列中出现该目标");
+  const qCount = await (await t.fetch("/api/teacher/appeals?countOnly=1")).json();
+  assert(Number(qCount.count) >= 1, `申诉计数 >= 1（实际 ${qCount.count}）`);
+  const sDenied = await s.fetch("/api/teacher/appeals");
+  assert(sDenied.status === 403, `学生访问教师申诉接口被拒 ${sDenied.status}`);
+
+  // 路径一：驳回 → 目标恢复正常 → 学生可自行标记完成
+  const rej = await t.fetch(`/api/teacher/appeals/${goal1.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ decision: "reject", reply: "E2E 驳回：请先完成本周练习" }),
+  });
+  const rejJ = await rej.json();
+  assert(rej.status === 200 && rejJ.appealStatus === "REJECTED" && rejJ.done === false, "驳回后 REJECTED 且目标仍未完成");
+  const rejAgain = await t.fetch(`/api/teacher/appeals/${goal1.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ decision: "accept" }),
+  });
+  assert(rejAgain.status === 400, `已处理的申诉不可重复处理 400（实际 ${rejAgain.status}）`);
+
+  const stuGoals = (await (await s.fetch("/api/goals")).json()) as {
+    id: string;
+    appealReply: string | null;
+  }[];
+  assert(
+    stuGoals.find((x) => x.id === goal1.id)?.appealReply === "E2E 驳回：请先完成本周练习",
+    "学生端可见教师回复"
+  );
+  const doneRes = await s.fetch(`/api/goals/${goal1.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ done: true }),
+  });
+  assert(doneRes.status === 200 && (await doneRes.json()).done === true, "驳回后学生可自行标记完成");
+  const afterDone = await s.fetch(`/api/goals/${goal1.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ action: "appeal", reason: "x" }),
+  });
+  assert(afterDone.status === 400, `已完成目标不能申诉 400（实际 ${afterDone.status}）`);
+
+  // 路径二：申诉 → 采纳 → 目标自动视为达成
+  const goal2 = await (
+    await s.fetch("/api/goals", {
+      method: "POST",
+      body: JSON.stringify({ content: "E2E 申诉闭环目标（采纳路径）" }),
+    })
+  ).json();
+  await s.fetch(`/api/goals/${goal2.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ action: "appeal", reason: "E2E：申请直接视为达成" }),
+  });
+  const acc = await t.fetch(`/api/teacher/appeals/${goal2.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ decision: "accept", reply: "E2E 同意，已视为达成" }),
+  });
+  const accJ = await acc.json();
+  assert(acc.status === 200 && accJ.appealStatus === "ACCEPTED" && accJ.done === true, "采纳后 ACCEPTED 且目标已达成");
+  assert(
+    !((await (await t.fetch(`/api/teacher/appeals?classId=${cls.id}`)).json()).items as { id: string }[]).some(
+      (x) => x.id === goal2.id
+    ),
+    "采纳后从待复核申诉队列移除"
+  );
+
+  console.log(
+    "\n✅ 全部端到端断言通过：闭环（布置 → 作答 → 批改 → 掌握度 → 错题 → 看板）+ F1 复核队列 + F2 补救聚合 + 学习目标申诉闭环验证成功！"
+  );
 }
 
 main()
