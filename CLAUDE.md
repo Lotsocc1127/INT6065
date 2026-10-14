@@ -20,11 +20,20 @@
   **Direct** 连接串（`prisma db push` / `db seed` 等 CLI 命令自动使用 Direct）
 - 建表/重灌：`npx prisma db push` + `npx prisma db seed`；已有数据时
   seed 会跳过，强制重灌用 `npx tsx prisma/seed.ts --force`
+- **开发与生产共用同一个 Neon 库**（`ep-cool-tooth-...`，本地 .env 与
+  Vercel 环境变量指向同一库）：任何 `db push` / `seed` 都会直接影响线上；
+  **禁止 `seed --force`**（2026-10-14 曾把线上真实测试数据覆盖掉）。
+  e2e 也会往这个库写数据（demo 生成/清除、测试作业与目标、分享链接），
+  多台机器/多会话时**错峰跑 e2e**，避免互相干扰
 - **禁止在 Pooled 连接上跑交互式事务**（`$transaction(async tx => ...)`）：
   逐条查询往返慢，超 Prisma 默认 5s 事务超时后报 P2028
   （Transaction not found / already closed）。写操作用**批量事务**
   `$transaction([op1, op2])`（数组形式无 timeout 参数、不受 5s 交互式
   超时限制），依赖数据先在事务外预读（参考 lib/grading.ts 的 processSubmission）
+- **Pooled 连接对并发查询敏感**：一次性并发上百条查询会报
+  `Can't reach database server`（e2e 实测两连败）。批量回退/多科目快照
+  要分批（10 条/批，见 lib/demo.ts clearDemoData）或串行
+  （见 app/api/share/[token]/route.ts）
 - Windows 上跑 `npx prisma generate` 前**先停 dev server**（query engine
   DLL 被占用会报 EPERM）
 
