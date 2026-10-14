@@ -3,13 +3,16 @@
 智学慧教（数据驱动的教学成长平台；Next.js 14 + Prisma/PostgreSQL + NextAuth + ECharts + llmClient）。
 功能与技术说明见 README.md，本文件只记**非显而易见的操作知识**。
 
-## 网络（重要）
+## 网络
 
-- 本机无法直连 github.com / `*.vercel.app`。git 已全局配置代理
-  `http://127.0.0.1:6450`（随系统代理客户端；失效时用
-  `git config --global http.proxy` 检查，端口以当时代理客户端为准）
-- 线上域名国内直连不通，**验证线上部署请走代理**；组员访问方案
-  （自定义域名 + Cloudflare / Sealos / 国内服务器）见 DEPLOY.md
+- **本机（2026-10-14 复测）：github.com 与 `int-6065.vercel.app` 均可直连**，
+  且未配置任何 git 代理（`git config --global --get http.proxy` 无输出）。
+  此前「无法直连 + 代理 6450」的记录已失效——**别照抄旧结论，先复测**：
+  `curl -s -o /dev/null -m 10 -w '%{http_code}\n' https://github.com`
+- 若哪天又不通，才需要挂回代理：
+  `git config --global http.proxy http://127.0.0.1:<代理客户端端口>`
+- 组员（国内网络）访问线上域名的方案（自定义域名 + Cloudflare / Sealos /
+  国内服务器）见 DEPLOY.md
 
 ## 数据库（Neon 双连接）
 
