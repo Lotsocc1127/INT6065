@@ -2,18 +2,19 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, MessageSquareWarning, Sparkles } from "lucide-react";
+import { ArrowLeft, Copy, Link2, MessageSquareWarning, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EChart } from "@/components/charts/echart";
 import { StatCard } from "@/components/app/stat-card";
 import { TierBadge } from "@/components/app/tier-badge";
 import { lineOption } from "@/lib/charts";
-import { tierOf, type Tier } from "@/lib/mastery";
+import { effectiveTierOf } from "@/lib/tier";
 import { fmtDateTime, pct } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +32,7 @@ interface SubjectGroup {
   items: MasteryItem[];
 }
 interface StudentData {
-  student: { id: string; name: string; className: string | null };
+  student: { id: string; name: string; className: string | null; tierOverride: string | null };
   mastery: SubjectGroup[];
   goals: { id: string; content: string; done: boolean; challenged: boolean }[];
   wrongCount: number;
@@ -47,6 +48,13 @@ interface Suggestion {
   strengths: string[];
   gaps: string[];
   actions: { kpCode: string; kpName: string; action: string; reason: string }[];
+}
+interface ShareLinkInfo {
+  id: string;
+  createdAt: string;
+  revoked: boolean;
+  revokedAt: string | null;
+  lastViewedAt: string | null;
 }
 
 function HistoryChart({ items }: { items: MasteryItem[] }) {
@@ -74,6 +82,9 @@ export default function StudentDetailPage({ params }: { params: { id: string } }
   const [suggestSubject, setSuggestSubject] = useState("math");
   const [suggesting, setSuggesting] = useState(false);
   const [suggestion, setSuggestion] = useState<Suggestion | null>(null);
+  const [shareLinks, setShareLinks] = useState<ShareLinkInfo[]>([]);
+  const [newShareUrl, setNewShareUrl] = useState("");
+  const [shareBusy, setShareBusy] = useState(false);
 
   useEffect(() => {
     fetch(`/api/students/${id}`)
@@ -84,7 +95,63 @@ export default function StudentDetailPage({ params }: { params: { id: string } }
         if (j.mastery?.length) setSuggestSubject(j.mastery[0].subject.code);
       })
       .catch((e) => setError(e.message));
+    loadShareLinks();
   }, [id]);
+
+  async function loadShareLinks() {
+    fetch(`/api/teacher/share-links?studentId=${id}`)
+      .then(async (r) => {
+        const j = await r.json();
+        if (r.ok) setShareLinks(Array.isArray(j.links) ? j.links : []);
+      })
+      .catch(() => {});
+  }
+
+  async function createShareLink() {
+    setShareBusy(true);
+    setNewShareUrl("");
+    try {
+      const r = await fetch("/api/teacher/share-links", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentId: id }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? "创建失败");
+      setNewShareUrl(`${window.location.origin}${j.link.url}`);
+      toast.success("链接已生成，请立即复制保存");
+      await loadShareLinks();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "创建失败");
+    } finally {
+      setShareBusy(false);
+    }
+  }
+
+  async function revokeShareLink(linkId: string) {
+    setShareBusy(true);
+    try {
+      const r = await fetch(`/api/teacher/share-links?id=${linkId}`, { method: "DELETE" });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? "撤销失败");
+      toast.success("链接已撤销");
+      await loadShareLinks();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "撤销失败");
+    } finally {
+      setShareBusy(false);
+    }
+  }
+
+  async function copyShareUrl() {
+    if (!newShareUrl) return;
+    try {
+      await navigator.clipboard.writeText(newShareUrl);
+      toast.success("链接已复制");
+    } catch {
+      toast.error("复制失败，请手动复制");
+    }
+  }
 
   async function getSuggestion() {
     setSuggesting(true);
@@ -123,7 +190,10 @@ export default function StudentDetailPage({ params }: { params: { id: string } }
         </Button>
         <h1 className="text-lg font-semibold">{data.student.name}</h1>
         <span className="text-sm text-muted-foreground">{data.student.className}</span>
-        <TierBadge tier={tierOf(avgAll) as Tier} />
+        <TierBadge tier={effectiveTierOf(avgAll, data.student.tierOverride)} />
+        {data.student.tierOverride && (
+          <Badge variant="secondary">分层已锁定</Badge>
+        )}
         <Badge variant="outline">未攻克错题 {data.wrongCount}</Badge>
       </div>
 
@@ -274,6 +344,64 @@ export default function StudentDetailPage({ params }: { params: { id: string } }
               )}
             </div>
           ))}
+        </CardContent>
+      </Card>
+
+      {/* 家长分享链接 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Link2 className="h-4 w-4" />
+            家长分享链接
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={createShareLink} disabled={shareBusy}>
+              生成分享链接
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              家长无需登录即可查看该生的成长档案（只读）。链接仅生成时显示一次，请立即复制。
+            </span>
+          </div>
+          {newShareUrl && (
+            <div className="flex items-center gap-2">
+              <Input readOnly value={newShareUrl} className="font-mono text-xs" />
+              <Button variant="outline" size="sm" onClick={copyShareUrl}>
+                <Copy className="mr-1 h-3.5 w-3.5" />
+                复制
+              </Button>
+            </div>
+          )}
+          {shareLinks.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">已生成的链接</p>
+              {shareLinks.map((l) => (
+                <div key={l.id} className="flex flex-wrap items-center gap-3 rounded-md border p-2.5 text-sm">
+                  <span className="text-xs text-muted-foreground">创建于 {fmtDateTime(l.createdAt)}</span>
+                  {l.lastViewedAt && (
+                    <span className="text-xs text-muted-foreground">最近查看 {fmtDateTime(l.lastViewedAt)}</span>
+                  )}
+                  {l.revoked ? (
+                    <Badge className="ml-auto" variant="outline">
+                      已撤销
+                    </Badge>
+                  ) : (
+                    <Button
+                      className="ml-auto"
+                      variant="outline"
+                      size="sm"
+                      disabled={shareBusy}
+                      onClick={() => revokeShareLink(l.id)}
+                    >
+                      <Trash2 className="mr-1 h-3.5 w-3.5" />
+                      撤销
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

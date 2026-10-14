@@ -193,3 +193,109 @@ ${JSON_ONLY}
 输出 JSON 结构：
 { "summary": string, "strengths": string[], "issues": string[], "suggestions": string[] }
 其中 summary 为 2-3 句总评；strengths/issues/suggestions 各 2-4 条。`;
+
+/** 7.9 分层升降建议（教师采纳后锁定分层） */
+export const TIER_ADVICE_SYSTEM = `你是因材施教的教学顾问。基于学生掌握度、近 7 天趋势与错因数据，为每位候选学生写一段分层调整建议。
+要求：
+- 使用形成性语言：描述具体数据表现，不贴"能力强弱"标签，不作固定定性。
+- 建议要有数据依据（引用平均掌握度、趋势变化、薄弱知识点或高频错因）。
+- 一句话总结（summary）+ 2-3 条理由（reasons），供教师决策；教师是否采纳由教师判断。
+${JSON_ONLY}
+输出 JSON 结构：
+{ "items": [ { "studentName": string, "summary": string, "reasons": string[] } ] }
+其中 items 顺序与输入候选人顺序一致，数量相同。`;
+
+export function tierAdviceContext(candidates: {
+  name: string;
+  currentLabel: string;
+  suggestedLabel: string;
+  avg: number;
+  trendDelta: number | null;
+  weakKps: string[];
+  errorTags: string[];
+}[]): string {
+  const lines = candidates.map((c) => {
+    const trend =
+      c.trendDelta === null
+        ? "近 7 天数据不足"
+        : `近 7 天趋势 ${c.trendDelta >= 0 ? "+" : ""}${Math.round(c.trendDelta * 100)} 个百分点`;
+    return `- ${c.name}：当前分层「${c.currentLabel}」，建议调整为「${c.suggestedLabel}」。平均掌握度 ${Math.round(c.avg * 100)}%；${trend}；薄弱知识点：${c.weakKps.join("、") || "无"}；高频错因：${c.errorTags.join("、") || "无"}`;
+  });
+  return `以下学生出现分层与实际掌握度不一致，请逐一给出调整建议：
+${lines.join("\n")}`;
+}
+
+/** 7.10 AI 班级学情周报（教师端） */
+export const WEEKLY_REPORT_SYSTEM = `你是资深初中教研员。基于班级近 7 天与前 7 天的真实学情数据，撰写一份班级学情周报。
+要求：
+- 使用形成性语言，不贴"能力强弱"标签；结论必须有数据依据，不虚构数据之外的推断。
+- 总结（summary）2-4 句：概括本周期变化（提交率、正确率、掌握度趋势、薄弱点与关注学生）。
+- 建议（suggestions）3-5 条：可执行、可跟进，具体到知识点、学生或教学动作；结合高频错因与薄弱知识点。
+${JSON_ONLY}
+输出 JSON 结构：
+{ "title": string, "summary": string, "suggestions": string[] }
+其中 title 为周报标题；summary 为总结段落；suggestions 为行动建议列表。`;
+
+export function weeklyReportContext(opts: {
+  subjectName: string;
+  className: string;
+  studentCount: number;
+  currentRange: string;
+  previousRange: string;
+  assignmentCount: { current: number; previous: number };
+  submissionRate: { current: number | null; previous: number | null };
+  correctRate: { current: number | null; previous: number | null };
+  weakKps: { code: string; name: string; classAvg: number }[];
+  trendDelta: number;
+  errorTags: { tag: string; count: number }[];
+  attentionStudents: { name: string; avg: number; trendDelta: number | null; reasons: string[] }[];
+  tierDistribution: Record<string, number>;
+}): string {
+  const pct = (v: number) => `${Math.round(v * 100)}%`;
+  const rate = (r: number | null) => (r === null ? "无数据" : pct(r));
+  const weakLines =
+    opts.weakKps.length > 0
+      ? opts.weakKps.map((k) => `${k.code} ${k.name}（${pct(k.classAvg)}）`).join("、")
+      : "无（班级平均掌握度均在 60% 以上）";
+  const tagLines =
+    opts.errorTags.length > 0
+      ? opts.errorTags.map((t) => `${t.tag} ${t.count} 次`).join("、")
+      : "暂无";
+  const stuLines =
+    opts.attentionStudents.length > 0
+      ? opts.attentionStudents
+          .map(
+            (s) =>
+              `- ${s.name}：平均掌握度 ${pct(s.avg)}；${s.reasons.join("；")}`
+          )
+          .join("\n")
+      : "无";
+  const tierLines = Object.entries(opts.tierDistribution)
+    .map(([t, n]) => `${TIER_META[t as Tier]?.label ?? t} ${n} 人`)
+    .join("、");
+
+  return `【周报基本信息】
+科目：${opts.subjectName}
+班级：${opts.className}（${opts.studentCount} 名学生）
+本期：${opts.currentRange}；上期：${opts.previousRange}
+
+【对比数据】
+布置作业：本期 ${opts.assignmentCount.current} 份（上期 ${opts.assignmentCount.previous} 份）
+提交率：本期 ${rate(opts.submissionRate.current)}（上期 ${rate(opts.submissionRate.previous)}）
+平均正确率：本期 ${rate(opts.correctRate.current)}（上期 ${rate(opts.correctRate.previous)}）
+两周掌握度趋势：${opts.trendDelta >= 0 ? "上升" : "下降"} ${pct(Math.abs(opts.trendDelta))}
+
+【薄弱知识点（平均掌握度 < 60%）】
+${weakLines}
+
+【高频错因（本期）】
+${tagLines}
+
+【待关注学生】
+${stuLines}
+
+【分层分布】
+${tierLines}
+
+请基于以上数据撰写周报（总结 + 行动建议）。`;
+}

@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { AlertTriangle, Sparkles, Users } from "lucide-react";
+import { AlertTriangle, Lock, Sparkles, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -38,6 +38,8 @@ interface DashboardData {
     name: string;
     avg: number;
     tier: Tier;
+    tierAuto: Tier;
+    tierOverride: string | null;
     values: Record<string, number>;
   }[];
   tiers: Record<Tier, string[]>;
@@ -271,6 +273,7 @@ function DashboardInner() {
                               <Link key={name} href={`/teacher/students/${stu.id}`}>
                                 <Badge variant="outline" className="cursor-pointer hover:bg-accent">
                                   {name}
+                                  {stu.tierOverride && <Lock className="ml-1 h-3 w-3" />}
                                 </Badge>
                               </Link>
                             );

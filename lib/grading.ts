@@ -8,18 +8,22 @@ import { Prisma, type Question } from "@prisma/client";
 import { prisma } from "./prisma";
 import { parseArr, toArrStr, clamp } from "./json";
 import { resolveChoiceLetter } from "./utils";
-import { avg, tierOf, updateMastery, type Tier } from "./mastery";
+import { avg, updateMastery, type Tier } from "./mastery";
+import { effectiveTierOf } from "./tier";
 import { llmConfigured, llmJson } from "./llm";
 import { GRADE_SYSTEM } from "./prompts";
 
-/** 学生某科层级：该科各知识点掌握度平均 → tierOf（无数据视为基础层） */
+/** 学生某科有效层级：教师锁定（tierOverride）优先，否则该科掌握度平均 → tierOf（无数据视为基础层） */
 export async function studentTierOf(studentId: string, subjectId: string): Promise<Tier> {
-  const rows = await prisma.mastery.findMany({
-    where: { studentId, subjectId },
-    select: { value: true },
-  });
-  if (!rows.length) return "foundation";
-  return tierOf(avg(rows.map((r) => r.value)));
+  const [stu, rows] = await Promise.all([
+    prisma.user.findUnique({ where: { id: studentId }, select: { tierOverride: true } }),
+    prisma.mastery.findMany({
+      where: { studentId, subjectId },
+      select: { value: true },
+    }),
+  ]);
+  const avgV = rows.length ? avg(rows.map((r) => r.value)) : 0;
+  return effectiveTierOf(avgV, stu?.tierOverride ?? null);
 }
 
 export interface AnswerInput {

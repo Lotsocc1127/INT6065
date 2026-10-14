@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BookOpen, ClipboardCheck, ClipboardList, FilePlus2, Sparkles, Users2, type LucideIcon } from "lucide-react";
+import { ArrowUpDown, BookOpen, ClipboardCheck, ClipboardList, FilePlus2, FileText, Sparkles, Users2, type LucideIcon } from "lucide-react";
 import { BrandLogo } from "@/components/app/brand-logo";
 import { GovernanceModal } from "@/components/app/governance-modal";
 import { SettingsMenu } from "@/components/app/settings-menu";
@@ -17,6 +17,8 @@ const LINKS: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/teacher/review", label: "待复核", icon: ClipboardCheck },
   { href: "/teacher/assignments/new", label: "布置作业", icon: FilePlus2 },
   { href: "/teacher/prep", label: "AI 备课", icon: Sparkles },
+  { href: "/teacher/tiers", label: "分层升降", icon: ArrowUpDown },
+  { href: "/teacher/weekly-report", label: "AI 周报", icon: FileText },
   { href: "/teacher/students", label: "学生管理", icon: Users2 },
 ];
 

@@ -3,7 +3,8 @@
  */
 import { prisma } from "./prisma";
 import { parseArr } from "./json";
-import { avg, tierOf, type Tier } from "./mastery";
+import { avg, type Tier } from "./mastery";
+import { effectiveTierOf } from "./tier";
 
 export interface RemedialKp {
   kpId: string;
@@ -22,9 +23,10 @@ export async function aggregateRemedialKps(opts: {
 }): Promise<RemedialKp[]> {
   const students = await prisma.user.findMany({
     where: { role: "STUDENT", ...(opts.classId ? { classId: opts.classId } : {}) },
-    select: { id: true },
+    select: { id: true, tierOverride: true },
   });
   const studentIds = students.map((s) => s.id);
+  const overrideByStudent = new Map(students.map((s) => [s.id, s.tierOverride]));
 
   const wqs = await prisma.wrongQuestion.findMany({
     where: {
@@ -53,7 +55,8 @@ export async function aggregateRemedialKps(opts: {
     arr.push(m.value);
     valsByStudent.set(m.studentId, arr);
   }
-  for (const [sid, vals] of valsByStudent) tierByStudent.set(sid, tierOf(avg(vals)));
+  for (const [sid, vals] of valsByStudent)
+    tierByStudent.set(sid, effectiveTierOf(avg(vals), overrideByStudent.get(sid)));
 
   // 高频错因：这些错题在作答记录中的错误标签
   const questionIds = [...new Set(wqs.map((w) => w.questionId))];

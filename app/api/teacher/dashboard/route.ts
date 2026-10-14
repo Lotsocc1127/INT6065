@@ -3,6 +3,7 @@ import { Role } from "@prisma/client";
 import { fail, ok } from "@/lib/api";
 import { requireApiUser } from "@/lib/auth";
 import { avg, tierOf, type Tier } from "@/lib/mastery";
+import { effectiveTierOf } from "@/lib/tier";
 import { parseArr } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 
@@ -41,7 +42,7 @@ export async function GET(req: NextRequest) {
       masteryByStudent.get(m.studentId)!.set(m.kpId, m.value);
     }
 
-    // 学生平均掌握度 + 分层
+    // 学生平均掌握度 + 分层（有效分层 = 教师锁定 ?? 自动判定）
     const studentRows = students.map((s) => {
       const map = masteryByStudent.get(s.id) ?? new Map();
       const values = kps.map((k) => map.get(k.id) ?? 0);
@@ -50,7 +51,9 @@ export async function GET(req: NextRequest) {
         id: s.id,
         name: s.name,
         avg: avgV,
-        tier: tierOf(avgV),
+        tier: effectiveTierOf(avgV, s.tierOverride),
+        tierAuto: tierOf(avgV),
+        tierOverride: s.tierOverride,
         values,
       };
     });

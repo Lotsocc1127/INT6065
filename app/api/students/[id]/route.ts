@@ -44,7 +44,12 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     ]);
 
     return ok({
-      student: { id: student.id, name: student.name, className: student.class?.name ?? null },
+      student: {
+        id: student.id,
+        name: student.name,
+        className: student.class?.name ?? null,
+        tierOverride: student.tierOverride,
+      },
       mastery: [...bySubject.values()].map((g) => ({
         subject: { code: g.code, name: g.name },
         avg: avg(g.items.map((m) => m.value)),

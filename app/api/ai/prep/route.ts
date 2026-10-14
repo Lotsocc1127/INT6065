@@ -3,7 +3,8 @@ import { Role } from "@prisma/client";
 import { fail, ok } from "@/lib/api";
 import { requireApiUser } from "@/lib/auth";
 import { llmJson } from "@/lib/llm";
-import { avg, tierOf, TIER_META, type Tier } from "@/lib/mastery";
+import { avg, TIER_META, type Tier } from "@/lib/mastery";
+import { effectiveTierOf } from "@/lib/tier";
 import { parseArr } from "@/lib/json";
 import { PREP_SYSTEM, prepContext } from "@/lib/prompts";
 import { prisma } from "@/lib/prisma";
@@ -56,7 +57,7 @@ export async function POST(req: NextRequest) {
     const studentRows = students.map((s) => {
       const map = masteryByStudent.get(s.id) ?? new Map();
       const values = kps.map((k) => map.get(k.id) ?? 0);
-      return { name: s.name, values, avg: avg(values) };
+      return { name: s.name, values, avg: avg(values), tier: effectiveTierOf(avg(values), s.tierOverride) };
     });
     const kpClassAvg = kps.map((k, i) => avg(studentRows.map((r) => r.values[i])));
     const weakKps = kps
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
       .filter((k) => k.classAvg < 0.6);
 
     const tierGroups: Record<Tier, string[]> = { foundation: [], intermediate: [], advanced: [] };
-    for (const r of studentRows) tierGroups[tierOf(r.avg)].push(r.name);
+    for (const r of studentRows) tierGroups[r.tier].push(r.name);
     const tiers = (Object.keys(tierGroups) as Tier[]).map((t) => ({
       label: TIER_META[t].label,
       count: tierGroups[t].length,
