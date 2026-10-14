@@ -7,6 +7,7 @@
 import { Prisma, type Question } from "@prisma/client";
 import { prisma } from "./prisma";
 import { parseArr, toArrStr, clamp } from "./json";
+import { resolveChoiceLetter } from "./utils";
 import { avg, tierOf, updateMastery, type Tier } from "./mastery";
 import { llmConfigured, llmJson } from "./llm";
 import { GRADE_SYSTEM } from "./prompts";
@@ -51,7 +52,9 @@ export function normalizeResponse(s: string): string {
 /** 客观题（选择/填空）确定性判分 */
 export function gradeObjective(question: Question, response: string): { isCorrect: boolean } {
   if (question.type === "SINGLE_CHOICE") {
-    return { isCorrect: response.trim().toUpperCase() === question.answer.trim().toUpperCase() };
+    // 答案可能存的是选项文本（AI 生成），先归一化为选项字母再与学生作答比较
+    const expected = resolveChoiceLetter(parseArr(question.options), question.answer);
+    return { isCorrect: response.trim().toUpperCase() === expected.toUpperCase() };
   }
   const accepts = question.answer.split("|").map(normalizeResponse);
   return { isCorrect: accepts.includes(normalizeResponse(response)) };

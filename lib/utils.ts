@@ -18,6 +18,36 @@ export function masteryTextColor(v: number): string {
   return "text-amber-600";
 }
 
+/** 选择题答案归一化为选项字母（A-D）。
+ * 兼容 AI/人工输入的各种格式："C"、"C. -10"、"C、-10"、"-10"（选项文本）等；
+ * 无法匹配到任何选项时原样返回。 */
+export function resolveChoiceLetter(options: string[], answer: string): string {
+  const a = answer.trim();
+  if (!a) return a;
+  const norm = (s: string) => s.trim().replace(/\s+/g, "").toLowerCase();
+  const m = a.match(/^([A-Da-d])\s*[.、)）:：]?\s*(.*)$/);
+  if (m) {
+    const letter = m[1].toUpperCase();
+    const rest = m[2].trim();
+    if (!rest) return letter; // "C" / "C."
+    const idx = letter.charCodeAt(0) - 65;
+    if (options[idx] && norm(options[idx]) === norm(rest)) return letter;
+    // 字母与其后内容不匹配时，继续按选项文本整体匹配
+  }
+  const idx = options.findIndex((o) => norm(o) === norm(a));
+  return idx >= 0 ? String.fromCharCode(65 + idx) : a;
+}
+
+/** 选择题标准答案展示文案：优先 "C. 选项内容"；无法解析时回退原答案文本 */
+export function choiceAnswerText(options: string[], answer: string): string {
+  const letter = resolveChoiceLetter(options, answer);
+  if (/^[A-D]$/.test(letter)) {
+    const idx = letter.charCodeAt(0) - 65;
+    return options[idx] ? `${letter}. ${options[idx]}` : letter;
+  }
+  return answer;
+}
+
 /** 毫秒 → 可读用时 */
 export function fmtDuration(ms: number | null | undefined): string {
   if (ms == null) return "—";

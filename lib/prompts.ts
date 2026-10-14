@@ -28,6 +28,7 @@ export function homeworkPrompt(opts: {
 要求：
 - 题目类型可混合使用：SINGLE_CHOICE（选择题）、FILL_BLANK（填空题）、OPEN_RESPONSE（解答题）。
 - SINGLE_CHOICE 的 options 必须恰好是 4 个选项字符串，绝不允许为 null 或空数组。
+- SINGLE_CHOICE 的 answer 必须只写正确选项的字母（A、B、C、D 之一），绝不能写选项内容或答案数值。
 - 所有文字一律使用普通文本字符：数学符号用 + - × ÷ = ² ³ ° ∠ √ ≤ ≥ 等普通字符，分数写作 (a+b)/c 形式。
   严禁使用 LaTeX（\\frac、\\sqrt、\\times 等反斜杠命令）、美元符号定界符（\$）、数学花体/斜体 Unicode 字符。
 - 保证题目学科内容正确、答案唯一，难度与"${tierMeta.label}"层级匹配。

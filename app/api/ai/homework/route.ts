@@ -4,6 +4,7 @@ import { requireApiUser } from "@/lib/auth";
 import { llmJson } from "@/lib/llm";
 import { homeworkPrompt } from "@/lib/prompts";
 import { prisma } from "@/lib/prisma";
+import { resolveChoiceLetter } from "@/lib/utils";
 import type { Tier } from "@/lib/mastery";
 
 export const dynamic = "force-dynamic";
@@ -82,17 +83,27 @@ export async function POST(req: NextRequest) {
       // 选择题必须带选项，否则无法作答，直接丢弃（全部无效时返回 502）
       .filter((q) => q.type !== "SINGLE_CHOICE" || (Array.isArray(q.options) && q.options.length >= 2))
       .slice(0, count)
-      .map((q) => ({
-        stem: stripLatex(q.stem),
-        type: ["SINGLE_CHOICE", "FILL_BLANK", "OPEN_RESPONSE"].includes(q.type)
-          ? q.type
-          : "FILL_BLANK",
-        options: Array.isArray(q.options) && q.type === "SINGLE_CHOICE" ? q.options.slice(0, 4).map(stripLatex) : null,
-        answer: stripLatex(q.answer),
-        analysis: stripLatex(q.analysis ?? ""),
-        kpId: kpByCode.get(q.kpCode)?.id ?? kps[0].id,
-        difficulty: Math.min(5, Math.max(1, Math.round(Number(q.difficulty) || 2))),
-      }));
+      .map((q) => {
+        const options =
+          Array.isArray(q.options) && q.type === "SINGLE_CHOICE"
+            ? q.options.slice(0, 4).map(stripLatex)
+            : null;
+        return {
+          stem: stripLatex(q.stem),
+          type: ["SINGLE_CHOICE", "FILL_BLANK", "OPEN_RESPONSE"].includes(q.type)
+            ? q.type
+            : "FILL_BLANK",
+          options,
+          // 选择题答案归一化为选项字母（AI 可能返回选项文本）
+          answer:
+            q.type === "SINGLE_CHOICE" && options
+              ? resolveChoiceLetter(options, stripLatex(q.answer))
+              : stripLatex(q.answer),
+          analysis: stripLatex(q.analysis ?? ""),
+          kpId: kpByCode.get(q.kpCode)?.id ?? kps[0].id,
+          difficulty: Math.min(5, Math.max(1, Math.round(Number(q.difficulty) || 2))),
+        };
+      });
     if (!questions.length) return ok({ error: "AI 未生成有效题目" }, 502);
 
     return ok({ questions });

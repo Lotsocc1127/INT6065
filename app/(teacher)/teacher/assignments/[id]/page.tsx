@@ -13,7 +13,7 @@ import { EChart } from "@/components/charts/echart";
 import { EmptyState } from "@/components/app/empty-state";
 import { hbarOption } from "@/lib/charts";
 import { TIER_META, type Tier } from "@/lib/mastery";
-import { fmtDate, fmtDateTime, fmtDuration, pct } from "@/lib/utils";
+import { choiceAnswerText, fmtDate, fmtDateTime, fmtDuration, pct } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -539,7 +539,9 @@ export default function AssignmentDetailPage({ params }: { params: { id: string 
               ) : null}
               <div className="mt-1.5 text-xs text-muted-foreground">
                 <span className="font-medium text-foreground">答案：</span>
-                {q.answer}
+                {q.type === "SINGLE_CHOICE" && q.options?.length
+                  ? choiceAnswerText(q.options, q.answer ?? "")
+                  : q.answer}
                 {q.analysis ? (
                   <>
                     <span className="ml-3 font-medium text-foreground">解析：</span>

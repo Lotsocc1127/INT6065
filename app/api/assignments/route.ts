@@ -3,6 +3,7 @@ import { AssignmentType, QuestionType } from "@prisma/client";
 import { fail, ok } from "@/lib/api";
 import { requireApiUser } from "@/lib/auth";
 import { toArrStr } from "@/lib/json";
+import { resolveChoiceLetter } from "@/lib/utils";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -119,15 +120,20 @@ export async function POST(req: NextRequest) {
 
     if (questions?.length) {
       for (const q of questions) {
+        const qType = (TYPES.includes(q.type) ? q.type : "FILL_BLANK") as QuestionType;
         const created = await prisma.question.create({
           data: {
             subjectId,
             kpIds: toArrStr(q.kpId ? [q.kpId] : []),
-            type: (TYPES.includes(q.type) ? q.type : "FILL_BLANK") as QuestionType,
+            type: qType,
             difficulty: Math.min(5, Math.max(1, Math.round(Number(q.difficulty) || 2))),
             stem: q.stem,
             options: q.options?.length ? toArrStr(q.options) : null,
-            answer: q.answer,
+            // 选择题答案归一化为选项字母，保证判分与学生作答（字母）可比
+            answer:
+              qType === "SINGLE_CHOICE" && q.options?.length
+                ? resolveChoiceLetter(q.options, q.answer)
+                : q.answer,
             analysis: q.analysis ?? null,
           },
         });

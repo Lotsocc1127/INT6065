@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { fmtDate, fmtDuration, pct } from "@/lib/utils";
+import { choiceAnswerText, fmtDate, fmtDuration, pct } from "@/lib/utils";
 import { TIER_META, type Tier } from "@/lib/mastery";
 
 export const dynamic = "force-dynamic";
@@ -245,7 +245,7 @@ export default function StudentAssignmentPage({ params }: { params: { id: string
                   {q.answer ? (
                     <div className="mt-1 text-xs text-muted-foreground">
                       <span className="font-medium text-foreground">标准答案：</span>
-                      {q.answer}
+                      {q.type === "SINGLE_CHOICE" ? choiceAnswerText(q.options, q.answer) : q.answer}
                     </div>
                   ) : null}
                   {a?.errorTags?.length ? (
