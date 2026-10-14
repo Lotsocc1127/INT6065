@@ -47,20 +47,33 @@ npx prisma db seed
 - `*.vercel.app` 在大陆部分地区可能访问慢或不稳定；若组员访问不畅，任选其一：
   - **Sealos**（国内可访问，免费试用额度）：仓库内 `Dockerfile` 已备好，上传部署 + 配一个 Postgres 实例即可，可自定义 `int6065.sealos.run` 之类的应用域名；
   - **国内轻量云服务器**：见下方方案 A；
+  - **香港轻量云服务器（免备案，大陆 + 香港直连）**：见下方方案 B；
   - 免费二级域名（如 `int6065.us.kg`、`int6065.eu.org`）+ Cloudflare 解析到 Vercel，也可缓解访问问题。
 
 ## 方案 A：国内云服务器自托管（约 100–200 元/年）
 
 ```bash
-# Ubuntu 22.04 + Node 20（或用仓库内 Dockerfile：docker build -t student-growth . && docker run -d -p 3000:3000 --env-file .env student-growth）
+# Ubuntu 22.04 + Node 20（或用仓库内 Dockerfile：docker build -t zhixue-huijiao . && docker run -d -p 3000:3000 --env-file .env zhixue-huijiao）
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt install -y nodejs nginx git
 git clone https://github.com/lotsocc1127/INT6065.git && cd INT6065
 npm ci && npx prisma generate
 npx prisma db push && npx prisma db seed   # DATABASE_URL 指向你的 Postgres
 npm run build
-sudo npm i -g pm2 && pm2 start npm --name student-growth -- start && pm2 save && pm2 startup
+sudo npm i -g pm2 && pm2 start npm --name zhixue-huijiao -- start && pm2 save && pm2 startup
 # Nginx 反代 + certbot HTTPS 见 README/网络教程
 ```
+
+## 方案 B：香港轻量云服务器（免备案，大陆 + 香港均可直连）
+
+大陆与香港都想直连、又不想办 ICP 备案时，**香港服务器**是最省心的选择：香港服务器不要求备案，大陆一般可直连（延迟 30–80ms），香港本地访问极快。
+
+1. 购买轻量服务器（阿里云/腾讯云「香港轻量应用服务器」，约 ¥24–50/月），系统选 Ubuntu 22.04
+2. 注册域名（如 `int6065.top`，约 ¥20–60/年；解析到香港服务器**无需备案**）
+3. 域名 A 记录解析到服务器公网 IP
+4. 部署：与方案 A 相同，直接用仓库内 `Dockerfile`（`docker build -t zhixue-huijiao . && docker run -d -p 3000:3000 --env-file .env zhixue-huijiao`）；数据库可同机 `docker run postgres`，或继续用 Neon
+5. HTTPS：certbot（Let's Encrypt）免费证书
+
+> 备案域名 + 国内服务器/CDN 是大陆最稳的方案，但需备案周期；预算有限或不想备案时，香港服务器就是「免备案 + 两地直连」的最优解。想零运维可改用 Sealos 香港区域 + 自定义域名（效果类似）。
 
 ## 上线前安全清单
 
