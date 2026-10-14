@@ -271,20 +271,24 @@ export async function clearDemoData(): Promise<void> {
   if (demoPoints.length) {
     const masteryIds = [...new Set(demoPoints.map((p) => p.masteryId))];
     await prisma.masteryPoint.deleteMany({ where: { source: DEMO_SOURCE } });
-    // 并行回退（连接池自动排队），避免逐条串行拖慢
-    await Promise.all(
-      masteryIds.map(async (masteryId) => {
-        const latest = await prisma.masteryPoint.findFirst({
-          where: { masteryId },
-          orderBy: { at: "desc" },
-          select: { value: true },
-        });
-        await prisma.mastery.update({
-          where: { id: masteryId },
-          data: { value: latest?.value ?? 0.3 },
-        });
-      })
-    );
+    // 分批回退：每批 10 条并发。曾因一次性并发 ~270 条查询把共享 Neon Pooled
+    // 连接冲垮（Can't reach database server），分小批可稳定通过。
+    const CHUNK = 10;
+    for (let i = 0; i < masteryIds.length; i += CHUNK) {
+      await Promise.all(
+        masteryIds.slice(i, i + CHUNK).map(async (masteryId) => {
+          const latest = await prisma.masteryPoint.findFirst({
+            where: { masteryId },
+            orderBy: { at: "desc" },
+            select: { value: true },
+          });
+          await prisma.mastery.update({
+            where: { id: masteryId },
+            data: { value: latest?.value ?? 0.3 },
+          });
+        })
+      );
+    }
   }
 }
 

@@ -109,6 +109,8 @@ export async function GET(req: NextRequest) {
         name: r.name,
         avg: r.avg,
         tier: r.tier,
+        tierAuto: r.tierAuto,
+        tierOverride: r.tierOverride,
         values: Object.fromEntries(kps.map((k, i) => [k.id, r.values[i]])),
       })),
       tiers,

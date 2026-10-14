@@ -46,25 +46,26 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
       masteryBySubject.get(m.subjectId)!.set(m.kpId, m.value);
     }
 
-    const bySubject = await Promise.all(
-      subjects.map(async (subject) => {
-        const snap = await buildGrowthSnapshot(student.id, subject.id);
-        const map = masteryBySubject.get(subject.id) ?? new Map();
-        const values = snap.kpList.map((k) => map.get(k.id) ?? 0);
-        const tier = effectiveTierOf(avg(values), student.tierOverride);
-        return {
-          subject: { code: subject.code, name: subject.name },
-          tier,
-          stats: snap.stats,
-          trend: snap.trend,
-          badges: snap.badges,
-          radar: {
-            indicators: snap.kpList.map((k) => ({ name: `${k.code} ${k.name}`, max: 1 })),
-            values,
-          },
-        };
-      })
-    );
+    // 科目快照串行生成：共享 Neon Pooled 连接对并发查询敏感（曾报
+    // Can't reach database server），科目数少，串行开销可忽略。
+    const bySubject = [];
+    for (const subject of subjects) {
+      const snap = await buildGrowthSnapshot(student.id, subject.id);
+      const map = masteryBySubject.get(subject.id) ?? new Map();
+      const values = snap.kpList.map((k) => map.get(k.id) ?? 0);
+      const tier = effectiveTierOf(avg(values), student.tierOverride);
+      bySubject.push({
+        subject: { code: subject.code, name: subject.name },
+        tier,
+        stats: snap.stats,
+        trend: snap.trend,
+        badges: snap.badges,
+        radar: {
+          indicators: snap.kpList.map((k) => ({ name: `${k.code} ${k.name}`, max: 1 })),
+          values,
+        },
+      });
+    }
 
     return ok({
       student: { name: student.name, className: student.class?.name ?? null },

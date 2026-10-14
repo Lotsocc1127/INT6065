@@ -546,8 +546,11 @@ async function main() {
 
   // 无 cookie 的裸会话公开访问（无需登录）
   const pub = new Session();
-  const pubRes = await pub.fetch(mkJ.link.url);
+  const pubRes = await pub.fetch(`/api/share/${raw}`);
   assert(pubRes.status === 200, `公开访问分享数据 ${pubRes.status}`);
+  // 分享页（HTML）同样公开可访问（页面为客户端渲染，内容由 /api/share 提供）
+  const pubPage = await pub.fetch(mkJ.link.url);
+  assert(pubPage.status === 200, `公开访问分享页 ${pubPage.status}`);
   const pubJ = (await pubRes.json()) as {
     student: { name: string };
     subjects: { code: string; name: string }[];
@@ -578,7 +581,7 @@ async function main() {
   assert(rev.status === 200, `撤销链接 ${rev.status}`);
   const afterRev = await prisma.shareLink.findUnique({ where: { id: dbLink!.id } });
   assert(afterRev?.revoked === true, "DB 已撤销");
-  const gone = await pub.fetch(mkJ.link.url);
+  const gone = await pub.fetch(`/api/share/${raw}`);
   assert(gone.status === 404, `撤销后公开访问 404（实际 ${gone.status}）`);
 
   const gRes = await s.fetch("/api/growth?subject=math");
