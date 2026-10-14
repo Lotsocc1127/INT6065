@@ -241,7 +241,7 @@ export default function ReviewPage() {
 
                   {f?.open ? (
                     <div className="space-y-2 rounded-md border p-3">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="text-sm">判分：</span>
                         <Button
                           size="sm"

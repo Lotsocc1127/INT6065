@@ -247,7 +247,7 @@ export default function AssignmentDetailPage({ params }: { params: { id: string 
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <Button asChild variant="ghost" size="sm">
           <Link href="/teacher/assignments">
             <ArrowLeft className="h-4 w-4" />
@@ -412,21 +412,21 @@ export default function AssignmentDetailPage({ params }: { params: { id: string 
                     <CardDescription>{fmtDateTime(selected.submittedAt)} 提交</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    <div className="grid grid-cols-3 gap-2 text-center">
-                      <div className="rounded-lg border p-2">
-                        <div className="text-lg font-semibold tabular-nums">
+                    <div className="grid grid-cols-3 gap-1.5 text-center sm:gap-2">
+                      <div className="rounded-lg border p-1.5 sm:p-2">
+                        <div className="text-base font-semibold tabular-nums sm:text-lg">
                           {scoreRate == null ? "—" : pct(scoreRate)}
                         </div>
                         <div className="text-xs text-muted-foreground">得分率</div>
                       </div>
-                      <div className="rounded-lg border p-2">
-                        <div className="text-lg font-semibold tabular-nums">
+                      <div className="rounded-lg border p-1.5 sm:p-2">
+                        <div className="text-base font-semibold tabular-nums sm:text-lg">
                           {fmtDuration(totalTime)}
                         </div>
                         <div className="text-xs text-muted-foreground">总用时</div>
                       </div>
-                      <div className="rounded-lg border p-2">
-                        <div className="text-lg font-semibold tabular-nums">{wrongCount}</div>
+                      <div className="rounded-lg border p-1.5 sm:p-2">
+                        <div className="text-base font-semibold tabular-nums sm:text-lg">{wrongCount}</div>
                         <div className="text-xs text-muted-foreground">错题数</div>
                       </div>
                     </div>

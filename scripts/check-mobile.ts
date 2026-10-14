@@ -72,6 +72,8 @@ async function main() {
     "/teacher",
     "/teacher/assignments",
     "/teacher/assignments/new",
+    `/teacher/assignments/${assignment.id}`,
+    "/teacher/review",
     "/teacher/students",
     `/teacher/students/${student.id}`,
     "/teacher/prep",

@@ -268,7 +268,7 @@ export function RemedialDialog({
                         )
                       }
                     >
-                      <SelectTrigger className="h-7 w-28 text-xs">
+                      <SelectTrigger className="h-9 w-32 text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -282,7 +282,7 @@ export function RemedialDialog({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="ml-auto h-7 w-7"
+                      className="ml-auto h-9 w-9"
                       onClick={() =>
                         setQuestions((list) => list?.filter((_, xi) => xi !== i) ?? null)
                       }
@@ -325,7 +325,7 @@ export function RemedialDialog({
           ) : null}
         </div>
 
-        <DialogFooter className="flex-row gap-2">
+        <DialogFooter className="gap-2">
           <Button
             variant="outline"
             onClick={generate}
