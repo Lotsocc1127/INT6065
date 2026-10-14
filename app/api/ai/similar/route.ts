@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
           ].join("\n"),
         },
       ],
-      { maxTokens: 4096 }
+      { maxTokens: 4096, task: "similar" }
     );
 
     const questions = (Array.isArray(result?.questions) ? result.questions : [])

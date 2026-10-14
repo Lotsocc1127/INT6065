@@ -25,6 +25,15 @@
 - Windows 上跑 `npx prisma generate` 前**先停 dev server**（query engine
   DLL 被占用会报 EPERM）
 
+## LLM（多模型路由 F7）
+
+- 候选链配置：`LLM_CHAIN=deepseek,anthropic`（全局）或 `LLM_CHAIN_<TASK>`
+  （按任务，TASK 大写，见 lib/llm.ts 的 LlmTask）；单个候选失败
+  （网络/4xx-5xx/空内容/JSON 解析失败）自动降级到下一个，全部失败抛聚合错误
+- `llmConfigured()` = 候选链非空（不是只看 LLM_PROVIDER 的 Key）；
+  本地 .env 的 Key 是空占位符，真实 Key 在 Vercel 环境变量里
+- 各 provider 支持 `*_BASE_URL` 环境变量覆盖 baseUrl（中转/代理/本地测试用）
+
 ## Next.js 构建（Vercel 必查项）
 
 - 任何使用 `getServerSession` / `requireApiUser` 的页面与 API 路由

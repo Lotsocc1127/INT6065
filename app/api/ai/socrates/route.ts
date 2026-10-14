@@ -65,6 +65,7 @@ export async function POST(req: NextRequest) {
       {
         maxTokens: 1024,
         temperature: 0.6,
+        task: "socrates",
       }
     );
     return ok({ reply });

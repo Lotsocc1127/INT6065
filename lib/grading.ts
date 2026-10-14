@@ -127,7 +127,7 @@ export async function gradeAnswer(question: Question, response: string): Promise
           .filter(Boolean)
           .join("\n"),
       },
-    ]);
+    ], { task: "grade" });
     const isCorrect = Boolean(g.isCorrect);
     const confidence =
       Number.isFinite(Number(g.confidence)) ? clamp(Number(g.confidence), 0, 1) : 0.5; // 漏给默认 0.5，保守进队列

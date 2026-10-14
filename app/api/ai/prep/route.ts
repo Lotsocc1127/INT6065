@@ -129,7 +129,7 @@ export async function POST(req: NextRequest) {
           }),
         },
       ],
-      { maxTokens: 8192 }
+      { maxTokens: 8192, task: "prep" }
     );
 
     // ---------- 输出消毒 ----------

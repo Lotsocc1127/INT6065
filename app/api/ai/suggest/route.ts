@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
           ),
         },
       ],
-      { maxTokens: 4096 }
+      { maxTokens: 4096, task: "suggest" }
     );
 
     const kpByCode = new Map(masteries.map((m) => [m.kp.code, m.kp]));

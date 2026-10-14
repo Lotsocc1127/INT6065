@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
           }),
         },
       ],
-      { maxTokens: 8192 }
+      { maxTokens: 8192, task: "homework" }
     );
 
     const kpByCode = new Map(kps.map((k) => [k.code, k]));
@@ -126,7 +126,7 @@ export async function POST(req: NextRequest) {
             ),
           },
         ],
-        { maxTokens: 4096 }
+        { maxTokens: 4096, task: "verify" }
       );
       const fixed: number[] = [];
       for (const f of Array.isArray(verify?.fixes) ? verify.fixes : []) {

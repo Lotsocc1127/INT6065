@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
           content: `学生：${submission.student.name}\n科目：${questions[0]?.subject.name ?? "—"}\n本次作业逐题数据：\n${answerLines}\n\n请基于以上数据给出个性化分析与发展建议。`,
         },
       ],
-      { maxTokens: 4096 }
+      { maxTokens: 4096, task: "analysis" }
     );
 
     const str = (v: unknown, fb = "") => (typeof v === "string" ? v : fb);
