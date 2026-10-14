@@ -7,6 +7,7 @@
 import { prisma } from "../lib/prisma";
 import { parseArr } from "../lib/json";
 import { updateMastery } from "../lib/mastery";
+import { gradeObjective } from "../lib/grading";
 import { resolveChoiceLetter } from "../lib/utils";
 
 type RateMap = Map<string, { sum: number; n: number }>;
@@ -66,9 +67,9 @@ async function main() {
     for (const rec of sub.answers) {
       const kpIds = parseArr(rec.kpIds);
       addRate(badRates, rec.score, kpIds);
-      if (rec.question.type === "SINGLE_CHOICE") {
-        const expected = resolveChoiceLetter(parseArr(rec.question.options), rec.question.answer);
-        const nowCorrect = rec.response.trim().toUpperCase() === expected.toUpperCase();
+      // 客观题（选择/填空）均可确定性重判；解答题保持 AI 批改结果
+      if (rec.question.type === "SINGLE_CHOICE" || rec.question.type === "FILL_BLANK") {
+        const { isCorrect: nowCorrect } = gradeObjective(rec.question, rec.response);
         const score = nowCorrect ? 1 : 0;
         if (nowCorrect !== (rec.isCorrect ?? false) || score !== (rec.score ?? 0)) {
           await prisma.answerRecord.update({
@@ -88,7 +89,7 @@ async function main() {
     }
 
     if (!changed.length) {
-      console.log(`- ${sub.student.name}：选择题批改无变化，无需修复`);
+      console.log(`- ${sub.student.name}：客观题批改无变化，无需修复`);
       continue;
     }
     console.log(
