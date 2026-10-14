@@ -389,7 +389,142 @@ async function main() {
     console.log("  （该班暂无未攻克错题，跳过聚合细节断言）");
   }
 
-  console.log("\n✅ 全部端到端断言通过：闭环（布置 → 作答 → 批改 → 掌握度 → 错题 → 看板）+ F1 复核队列 + F2 补救聚合验证成功！");
+  console.log("\n== 16. 分层升降建议与一键采纳 ==");
+  const tierRes = await t.fetch(`/api/teacher/tiers?subject=math&classId=${cls.id}`);
+  assert(tierRes.status === 200, `分层建议接口 ${tierRes.status}`);
+  const tierJ = (await tierRes.json()) as {
+    items: { studentId: string; name: string; currentTier: string; suggestedTier: string; advice: { summary: string } }[];
+    pinned: { id: string; name: string; tierOverride: string | null }[];
+    aiGenerated: boolean;
+  };
+  assert(Array.isArray(tierJ.items), "返回 items 数组");
+  assert(Array.isArray(tierJ.pinned), "返回 pinned 数组");
+  for (const it of tierJ.items) {
+    assert(typeof it.advice?.summary === "string" && it.advice.summary.length > 0, `候选 ${it.name} 有建议文本`);
+    assert(["foundation", "intermediate", "advanced"].includes(it.suggestedTier), `候选 ${it.name} 目标层级合法`);
+  }
+  if (!llmConfigured()) assert(tierJ.aiGenerated === false, "无 Key 时 aiGenerated=false");
+
+  // 采纳：给 e2e 学生锁定一个与其自动分层不同的层
+  const dash1 = (await (await t.fetch(`/api/teacher/dashboard?subject=math&classId=${cls.id}`)).json()) as {
+    students: { id: string; name: string; tier: string; tierOverride: string | null }[];
+  };
+  const me1 = dash1.students.find((x) => x.id === student.id);
+  assert(me1 && !me1.tierOverride, "e2e 学生初始无锁定");
+  const targetTier = me1!.tier === "foundation" ? "intermediate" : "foundation";
+  const adopt = await t.fetch("/api/teacher/tiers", {
+    method: "POST",
+    body: JSON.stringify({ items: [{ studentId: student.id, tier: targetTier }] }),
+  });
+  assert(adopt.status === 200, `采纳分层 ${adopt.status}`);
+  const dbMe = await prisma.user.findUnique({ where: { id: student.id } });
+  assert(dbMe?.tierOverride === targetTier, `DB tierOverride=${targetTier}（实际 ${dbMe?.tierOverride}）`);
+
+  const dash2 = (await (await t.fetch(`/api/teacher/dashboard?subject=math&classId=${cls.id}`)).json()) as {
+    students: { id: string; name: string; tier: string; tierOverride: string | null }[];
+  };
+  const me2 = dash2.students.find((x) => x.id === student.id);
+  assert(me2 && me2.tier === targetTier && me2.tierOverride === targetTier, "看板有效分层=锁定值");
+
+  const asgDetail = (await (await s.fetch(`/api/assignments/${assignmentId}`)).json()) as { myTier: string | null };
+  assert(asgDetail.myTier === targetTier, `学生端 myTier=${targetTier}（锁定生效）`);
+
+  // 清除锁定 → 恢复自动分层
+  const clearTier = await t.fetch("/api/teacher/tiers", {
+    method: "POST",
+    body: JSON.stringify({ items: [{ studentId: student.id, tier: null }] }),
+  });
+  assert(clearTier.status === 200, `清除锁定 ${clearTier.status}`);
+  const dash3 = (await (await t.fetch(`/api/teacher/dashboard?subject=math&classId=${cls.id}`)).json()) as {
+    students: { id: string; name: string; tier: string; tierOverride: string | null }[];
+  };
+  const me3 = dash3.students.find((x) => x.id === student.id);
+  assert(me3 && me3.tier === me1!.tier && me3.tierOverride === null, "清除后恢复自动分层");
+
+  console.log("\n== 17. AI 班级学情周报 ==");
+  const wrRes = await t.fetch("/api/ai/weekly-report", {
+    method: "POST",
+    body: JSON.stringify({ subjectCode: "math", classId: cls.id }),
+  });
+  assert(wrRes.status === 200, `周报接口 ${wrRes.status}`);
+  const wrJ = (await wrRes.json()) as {
+    report: { title: string; summary: string; suggestions: string[]; aiGenerated: boolean };
+    stats: {
+      range: { current: { from: string }; previous: { to: string } };
+      submissionRate: { current: number | null; previous: number | null };
+      masteryTrend: { date: string; avg: number }[];
+      tierDistribution: Record<string, number>;
+    };
+  };
+  assert(typeof wrJ.report?.title === "string" && wrJ.report.title.length > 0, "周报有标题");
+  assert(typeof wrJ.report?.summary === "string" && wrJ.report.summary.length > 0, "周报有总结文本");
+  assert(Array.isArray(wrJ.report?.suggestions), "周报含建议数组");
+  const sr = wrJ.stats.submissionRate;
+  assert(sr.current === null || (sr.current >= 0 && sr.current <= 1), "提交率 0-1 或 null");
+  assert(new Date(wrJ.stats.range.current.from) >= new Date(wrJ.stats.range.previous.to), "窗口顺序正确（本期在前）");
+  assert(["foundation", "intermediate", "advanced"].every((t) => t in wrJ.stats.tierDistribution), "分层分布三档齐全");
+  if (!llmConfigured()) assert(wrJ.report.aiGenerated === false, "无 Key 时模板兜底 aiGenerated=false");
+  const wrForbidden = await s.fetch("/api/ai/weekly-report", {
+    method: "POST",
+    body: JSON.stringify({ subjectCode: "math", classId: cls.id }),
+  });
+  assert(wrForbidden.status === 403, `学生会话调用周报被拒（实际 ${wrForbidden.status}）`);
+
+  console.log("\n== 18. 家长只读分享链接 ==");
+  const mk = await t.fetch("/api/teacher/share-links", {
+    method: "POST",
+    body: JSON.stringify({ studentId: student.id }),
+  });
+  assert(mk.status === 201, `创建分享链接 ${mk.status}`);
+  const mkJ = (await mk.json()) as { link: { id: string; url: string } };
+  const raw = (mkJ.link?.url ?? "").split("/").pop() ?? "";
+  assert(/^[A-Za-z0-9_-]{32}$/.test(raw), `token 为 32 字符 base64url（实际 ${raw.length}）`);
+  const dbLink = await prisma.shareLink.findFirst({ where: { studentId: student.id }, orderBy: { createdAt: "desc" } });
+  assert(dbLink && dbLink.tokenHash.length === 64 && dbLink.tokenHash !== raw, "DB 存 64 位 sha256 哈希且不等于 raw");
+
+  // 无 cookie 的裸会话公开访问（无需登录）
+  const pub = new Session();
+  const pubRes = await pub.fetch(mkJ.link.url);
+  assert(pubRes.status === 200, `公开访问分享数据 ${pubRes.status}`);
+  const pubJ = (await pubRes.json()) as {
+    student: { name: string };
+    subjects: { code: string; name: string }[];
+    goals: unknown[];
+    bySubject: {
+      subject: { code: string };
+      tier: string;
+      stats: { submissions: number };
+      trend: unknown[];
+      badges: unknown[];
+      radar: { indicators: unknown[]; values: number[] };
+    }[];
+  };
+  assert(pubJ.student?.name === student.name, "分享数据含学生姓名");
+  assert(Array.isArray(pubJ.subjects) && pubJ.subjects.length > 0, "含科目列表");
+  assert(Array.isArray(pubJ.goals), "含目标列表");
+  const bs0 = pubJ.bySubject?.[0];
+  assert(bs0 && typeof bs0.stats.submissions === "number", "含统计卡片数据");
+  assert(Array.isArray(bs0.trend) && Array.isArray(bs0.badges), "含趋势与徽章");
+  assert(bs0.radar && bs0.radar.indicators.length === bs0.radar.values.length, "雷达指标与值对齐");
+  assert(["foundation", "intermediate", "advanced"].includes(bs0.tier), `tier 合法（${bs0.tier}）`);
+  assert(!JSON.stringify(pubJ).includes("errorAnalysis"), "分享数据不含错因归因明细");
+
+  const bad = await pub.fetch("/api/share/not-a-real-token-0123456789ab");
+  assert(bad.status === 404, `坏 token 返回 404（实际 ${bad.status}）`);
+
+  const rev = await t.fetch(`/api/teacher/share-links?id=${dbLink!.id}`, { method: "DELETE" });
+  assert(rev.status === 200, `撤销链接 ${rev.status}`);
+  const afterRev = await prisma.shareLink.findUnique({ where: { id: dbLink!.id } });
+  assert(afterRev?.revoked === true, "DB 已撤销");
+  const gone = await pub.fetch(mkJ.link.url);
+  assert(gone.status === 404, `撤销后公开访问 404（实际 ${gone.status}）`);
+
+  const gRes = await s.fetch("/api/growth?subject=math");
+  assert(gRes.status === 200, `学生 growth 接口回归 ${gRes.status}`);
+  const gJ = (await gRes.json()) as { badges: unknown[]; stats: { submissions: number } };
+  assert(Array.isArray(gJ.badges) && gJ.badges.length === 4 && typeof gJ.stats.submissions === "number", "growth 响应形状不变");
+
+  console.log("\n✅ 全部端到端断言通过：闭环（布置 → 作答 → 批改 → 掌握度 → 错题 → 看板）+ F1 复核队列 + F2 补救聚合 + 分层升降 + 周报 + 家长分享验证成功！");
 }
 
 main()
