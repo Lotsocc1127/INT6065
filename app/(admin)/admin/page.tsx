@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { KeyRound, Plus, School, UserCog } from "lucide-react";
+import { FlaskConical, KeyRound, Plus, School, Trash2, UserCog } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -52,6 +52,9 @@ export default function AdminPage() {
   // 新建班级
   const [cName, setCName] = useState("");
   const [creating, setCreating] = useState(false);
+  // 演示数据
+  const [demoOpen, setDemoOpen] = useState<"generate" | "clear" | null>(null);
+  const [demoBusy, setDemoBusy] = useState(false);
 
   const loadTeachers = useCallback(async () => {
     fetch("/api/admin/teachers")
@@ -125,6 +128,31 @@ export default function AdminPage() {
       toast.error(e instanceof Error ? e.message : "重置失败");
     } finally {
       setResetting(false);
+    }
+  }
+
+  async function doDemo(mode: "generate" | "clear") {
+    setDemoBusy(true);
+    try {
+      const r = await fetch("/api/admin/demo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? "操作失败");
+      if (mode === "generate") {
+        toast.success(
+          `演示数据已生成：${j.classes} 个班 / ${j.assignments} 份作业 / ${j.submissions} 份提交 / ${j.answers} 条作答（待复核 ${j.pendingReview} 条）`
+        );
+      } else {
+        toast.success("演示数据已清除，真实数据不受影响");
+      }
+      setDemoOpen(null);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "操作失败");
+    } finally {
+      setDemoBusy(false);
     }
   }
 
@@ -279,6 +307,61 @@ export default function AdminPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* 演示数据 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FlaskConical className="h-5 w-5" />
+            演示数据
+          </CardTitle>
+          <CardDescription>
+            一键生成近 2.5 周的演示教学周期（3 个班 × 5 轮数学作业，含待复核数据），
+            用于课堂展示与功能验收；与真实数据隔离，可随时清除或重建。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-center gap-2">
+          <Button
+            onClick={() => setDemoOpen("generate")}
+            disabled={demoBusy}
+            className="gap-1.5"
+          >
+            <FlaskConical className="h-4 w-4" />
+            {demoBusy ? "处理中…" : "生成演示数据"}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setDemoOpen("clear")}
+            disabled={demoBusy}
+            className="gap-1.5"
+          >
+            <Trash2 className="h-4 w-4" />
+            清除演示数据
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* 演示数据确认对话框 */}
+      <Dialog open={Boolean(demoOpen)} onOpenChange={(o) => !o && setDemoOpen(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{demoOpen === "generate" ? "生成演示数据" : "清除演示数据"}</DialogTitle>
+            <DialogDescription>
+              {demoOpen === "generate"
+                ? "将清理并重建 3 个班近 2.5 周的数学演示数据（作业、提交、掌握度历史与错题本），不影响任何真实数据。生成需要几秒钟，请勿关闭页面。"
+                : "将清除全部演示数据，并把受影响的掌握度回退到演示前的状态。真实数据不受影响。"}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDemoOpen(null)} disabled={demoBusy}>
+              取消
+            </Button>
+            <Button onClick={() => demoOpen && doDemo(demoOpen)} disabled={demoBusy}>
+              {demoBusy ? "处理中…" : demoOpen === "generate" ? "确认生成" : "确认清除"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* 重置密码对话框 */}
       <Dialog open={Boolean(resetTarget)} onOpenChange={(o) => !o && setResetTarget(null)}>
