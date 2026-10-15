@@ -68,7 +68,7 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
     }
 
     return ok({
-      student: { name: student.name, className: student.class?.name ?? null },
+      student: { name: student.name, studentNo: student.studentNo, className: student.class?.name ?? null },
       subjects: subjects.map((s) => ({ code: s.code, name: s.name })),
       goals: goals.map((g) => ({
         id: g.id,

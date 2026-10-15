@@ -3,7 +3,9 @@ import { Role } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { fail, ok } from "@/lib/api";
 import { requireApiUser } from "@/lib/auth";
+import { validatePassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
+import { createStudentWithNo } from "@/lib/student-no";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +28,7 @@ export async function GET(req: NextRequest) {
       select: {
         id: true,
         name: true,
+        studentNo: true,
         classId: true,
         _count: { select: { goals: true } },
       },
@@ -36,6 +39,7 @@ export async function GET(req: NextRequest) {
       students: students.map((s) => ({
         id: s.id,
         name: s.name,
+        studentNo: s.studentNo,
         goalCount: s._count.goals,
       })),
     });
@@ -53,15 +57,14 @@ export async function POST(req: NextRequest) {
     const classId = String(body?.classId ?? "");
     const password = String(body?.password ?? "").trim() || DEMO_PASSWORD;
     if (!name) return ok({ error: "请填写学生姓名" }, 400);
-    if (password.length < 4) return ok({ error: "密码至少 4 位" }, 400);
+    const perr = validatePassword(password);
+    if (perr) return ok({ error: perr }, 400);
     const cls = await prisma.class.findUnique({ where: { id: classId } });
     if (!cls) return ok({ error: "班级不存在" }, 404);
 
     const passwordHash = await bcrypt.hash(password, 10);
-    const student = await prisma.user.create({
-      data: { name, role: Role.STUDENT, classId, password: passwordHash },
-    });
-    return ok({ id: student.id, name: student.name }, 201);
+    const student = await createStudentWithNo({ name, password: passwordHash, classId });
+    return ok({ id: student.id, name: student.name, studentNo: student.studentNo }, 201);
   } catch (e) {
     return fail(e);
   }

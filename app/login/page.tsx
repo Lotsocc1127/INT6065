@@ -19,12 +19,13 @@ export default async function LoginPage() {
   }
   const users = await prisma.user.findMany({
     orderBy: [{ role: "asc" }, { name: "asc" }],
-    select: { id: true, name: true, role: true, class: { select: { name: true } } },
+    select: { id: true, name: true, role: true, studentNo: true, class: { select: { name: true } } },
   });
   const list = users.map((u) => ({
     id: u.id,
     name: u.name,
     role: u.role,
+    studentNo: u.studentNo,
     className: u.class?.name ?? null,
   }));
   return (

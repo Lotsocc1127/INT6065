@@ -7,7 +7,7 @@ import { prisma } from "./prisma";
 import { avg, type Tier } from "./mastery";
 import { effectiveTierOf } from "./tier";
 import { parseArr } from "./json";
-import { pct } from "./utils";
+import { formatStudent, pct } from "./utils";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -26,6 +26,7 @@ export interface WeeklyStats {
   attentionStudents: {
     id: string;
     name: string;
+    studentNo: string | null;
     avg: number;
     trendDelta: number | null; // 近 7 天
     reasons: string[];
@@ -49,7 +50,7 @@ export async function aggregateWeeklyReport(opts: {
 
   const students = await prisma.user.findMany({
     where: { role: Role.STUDENT, classId: opts.classId },
-    select: { id: true, name: true, tierOverride: true },
+    select: { id: true, name: true, studentNo: true, tierOverride: true },
     orderBy: { name: "asc" },
   });
   const studentIds = students.map((s) => s.id);
@@ -73,7 +74,7 @@ export async function aggregateWeeklyReport(opts: {
     const map = valsByStudent.get(s.id) ?? new Map();
     const values = kps.map((k) => map.get(k.id) ?? 0);
     const avgV = avg(values);
-    return { id: s.id, name: s.name, avg: avgV, values, tier: effectiveTierOf(avgV, s.tierOverride) };
+    return { id: s.id, name: s.name, studentNo: s.studentNo, avg: avgV, values, tier: effectiveTierOf(avgV, s.tierOverride) };
   });
   const kpClassAvg = kps.map((k, i) => avg(studentRows.map((r) => r.values[i])));
   const weakKps = kps
@@ -189,7 +190,7 @@ export async function aggregateWeeklyReport(opts: {
         .filter((k) => k.v < 0.6)
         .slice(0, 3);
       if (weak.length) reasons.push(`薄弱：${weak.map((k) => `${k.code} ${k.name}`).join("、")}`);
-      return { id: r.id, name: r.name, avg: r.avg, trendDelta: td, reasons };
+      return { id: r.id, name: r.name, studentNo: r.studentNo, avg: r.avg, trendDelta: td, reasons };
     })
     .filter((r) => r.reasons.length > 0)
     .sort((a, b) => a.avg - b.avg)
@@ -259,7 +260,7 @@ export function buildReportFallback(stats: WeeklyStats): {
     suggestions.push("提交率低于 80%，请提醒未提交学生按时完成作业。");
   if (stats.attentionStudents.length)
     suggestions.push(
-      `对 ${stats.attentionStudents.map((s) => s.name).join("、")} 进行个别辅导，结合错因面批。`
+      `对 ${stats.attentionStudents.map((s) => formatStudent(s.name, s.studentNo)).join("、")} 进行个别辅导，结合错因面批。`
     );
   if (stats.errorTags.length)
     suggestions.push(

@@ -103,10 +103,18 @@ async function main() {
 
   const students: User[] = [];
   const studentBase = new Map<string, number>();
+  let studentSeq = 0; // 学号全局递增（两位零填充），与 lib/student-no.ts 的分配口径一致
   async function createStudents(classId: string, profiles: { name: string; base: number }[]) {
     for (const p of profiles) {
+      studentSeq += 1;
       const stu = await prisma.user.create({
-        data: { name: p.name, role: Role.STUDENT, classId, password: passwordHash },
+        data: {
+          name: p.name,
+          role: Role.STUDENT,
+          classId,
+          password: passwordHash,
+          studentNo: String(studentSeq).padStart(2, "0"),
+        },
       });
       studentBase.set(stu.id, p.base);
       students.push(stu);
@@ -451,7 +459,9 @@ async function main() {
   await prisma.masteryPoint.createMany({ data: historyRows });
 
   // ---------- 演示作业 + 作答 ----------
-  const errorTagPool = ["计算失误", "概念混淆", "步骤遗漏", "审题错误"];
+  // 错因标签按学科分池（数学/语文），与 lib/prompts.ts 的 gradeSystem 词汇表一致
+  const MATH_ERROR_TAGS = ["计算失误", "概念混淆", "步骤遗漏", "审题错误"];
+  const CHINESE_ERROR_TAGS = ["理解偏差", "要点遗漏", "表达不当", "审题不清"];
 
   async function seedDemoAssignment(opts: {
     subjectId: string;
@@ -463,6 +473,8 @@ async function main() {
     masteryMap: Map<string, Map<string, number>>;
     /** 与 stems 对应：每题的适用层级（null = 全体可见） */
     tierByIndex?: (string | null)[];
+    /** 错因标签池（默认数学） */
+    errorTags?: string[];
   }) {
     const {
       subjectId,
@@ -473,6 +485,7 @@ async function main() {
       students: classStudents,
       masteryMap,
       tierByIndex,
+      errorTags: tagPool = MATH_ERROR_TAGS,
     } = opts;
     const tiers = tierByIndex ?? stems.map(() => null);
     const questions = await Promise.all(
@@ -552,7 +565,7 @@ async function main() {
           isCorrect: a.correct,
           score: a.correct ? 1 : 0,
           timeSpentMs: 30_000 + Math.floor(rng() * 240_000),
-          errorTags: a.correct ? "[]" : toArrStr([pick(errorTagPool)]),
+          errorTags: a.correct ? "[]" : toArrStr([pick(tagPool)]),
         }))
       ),
     });
@@ -618,6 +631,7 @@ async function main() {
         stems: chiStems,
         students: classStudents,
         masteryMap: chiMasteryMap,
+        errorTags: CHINESE_ERROR_TAGS,
       })
     );
   }

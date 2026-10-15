@@ -15,7 +15,7 @@ import { StatCard } from "@/components/app/stat-card";
 import { TierBadge } from "@/components/app/tier-badge";
 import { lineOption } from "@/lib/charts";
 import { effectiveTierOf } from "@/lib/tier";
-import { fmtDateTime, pct } from "@/lib/utils";
+import { fmtDateTime, formatStudent, pct } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +32,7 @@ interface SubjectGroup {
   items: MasteryItem[];
 }
 interface StudentData {
-  student: { id: string; name: string; className: string | null; tierOverride: string | null };
+  student: { id: string; name: string; studentNo: string | null; className: string | null; tierOverride: string | null };
   mastery: SubjectGroup[];
   goals: {
     id: string;
@@ -195,7 +195,7 @@ export default function StudentDetailPage({ params }: { params: { id: string } }
             返回看板
           </Link>
         </Button>
-        <h1 className="text-lg font-semibold">{data.student.name}</h1>
+        <h1 className="text-lg font-semibold">{formatStudent(data.student.name, data.student.studentNo)}</h1>
         <span className="text-sm text-muted-foreground">{data.student.className}</span>
         <TierBadge tier={effectiveTierOf(avgAll, data.student.tierOverride)} />
         {data.student.tierOverride && (

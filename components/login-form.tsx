@@ -25,6 +25,7 @@ interface DemoUser {
   id: string;
   name: string;
   role: string;
+  studentNo: string | null;
   className: string | null;
 }
 
@@ -95,7 +96,11 @@ export function LoginForm({ users }: { users: DemoUser[] }) {
                   {students.map((u) => (
                     <SelectItem key={u.id} value={u.id}>
                       {u.name}
-                      {u.className ? `（${u.className}）` : ""}
+                      {u.studentNo
+                        ? `（${u.studentNo} · ${u.className ?? "未分班"}）`
+                        : u.className
+                          ? `（${u.className}）`
+                          : ""}
                     </SelectItem>
                   ))}
                 </SelectGroup>

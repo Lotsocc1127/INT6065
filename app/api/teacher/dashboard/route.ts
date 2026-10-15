@@ -50,6 +50,7 @@ export async function GET(req: NextRequest) {
       return {
         id: s.id,
         name: s.name,
+        studentNo: s.studentNo,
         avg: avgV,
         tier: effectiveTierOf(avgV, s.tierOverride),
         tierAuto: tierOf(avgV),
@@ -59,8 +60,13 @@ export async function GET(req: NextRequest) {
     });
 
     const kpClassAvg = kps.map((k, i) => avg(studentRows.map((r) => r.values[i])));
-    const tiers: Record<Tier, string[]> = { foundation: [], intermediate: [], advanced: [] };
-    for (const r of studentRows) tiers[r.tier].push(r.name);
+    // 按 id 聚合（重名时姓名不可作键/反查依据）
+    const tiers: Record<Tier, { id: string; name: string; studentNo: string | null }[]> = {
+      foundation: [],
+      intermediate: [],
+      advanced: [],
+    };
+    for (const r of studentRows) tiers[r.tier].push({ id: r.id, name: r.name, studentNo: r.studentNo });
 
     const assignments = await prisma.assignment.findMany({
       where: { subjectId: subject.id, classId: cls.id },
@@ -107,6 +113,7 @@ export async function GET(req: NextRequest) {
       students: studentRows.map((r) => ({
         id: r.id,
         name: r.name,
+        studentNo: r.studentNo,
         avg: r.avg,
         tier: r.tier,
         tierAuto: r.tierAuto,

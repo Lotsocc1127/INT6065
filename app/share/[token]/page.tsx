@@ -13,12 +13,12 @@ import { StatCard } from "@/components/app/stat-card";
 import { TierBadge } from "@/components/app/tier-badge";
 import { lineOption, radarOption } from "@/lib/charts";
 import type { Tier } from "@/lib/mastery";
-import { fmtDuration, pct } from "@/lib/utils";
+import { fmtDuration, formatStudent, pct } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
 interface ShareData {
-  student: { name: string; className: string | null };
+  student: { name: string; studentNo: string | null; className: string | null };
   subjects: { code: string; name: string }[];
   goals: { id: string; content: string; done: boolean; createdAt: string }[];
   bySubject: {
@@ -90,7 +90,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
       <div className="flex flex-wrap items-center gap-3">
         <BrandLogo />
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-lg font-semibold">{data.student.name} 的成长档案</h1>
+          <h1 className="truncate text-lg font-semibold">{formatStudent(data.student.name, data.student.studentNo)} 的成长档案</h1>
           <p className="text-sm text-muted-foreground">
             {data.student.className ?? "未分班"} · 家长只读视图
           </p>

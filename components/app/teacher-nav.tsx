@@ -40,43 +40,48 @@ export function TeacherNav() {
   }, [pathname]);
   return (
     <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-2 md:h-14 md:flex-nowrap md:px-6 md:py-0">
-        <Link href="/teacher" className="order-1 flex shrink-0 items-center gap-2">
-          <BrandLogo size={30} />
-          <span className="text-lg font-bold tracking-tight">智学慧教</span>
-          <span className="hidden rounded bg-primary px-1.5 py-0.5 text-xs text-primary-foreground md:inline">
-            教师端
-          </span>
-        </Link>
-        <div className="order-2 flex shrink-0 items-center gap-2 md:order-3">
-          <GovernanceModal />
-          <SettingsMenu />
-          <UserNav />
+      <div className="mx-auto max-w-7xl px-4 md:px-6">
+        {/* 第一行：品牌 + 右侧操作（学生端同款结构） */}
+        <div className="flex h-12 items-center justify-between gap-3">
+          <Link href="/teacher" className="flex shrink-0 items-center gap-2">
+            <BrandLogo size={28} />
+            <span className="text-lg font-bold tracking-tight">智学慧教</span>
+            <span className="rounded bg-primary px-1.5 py-0.5 text-xs text-primary-foreground">
+              教师端
+            </span>
+          </Link>
+          <div className="flex shrink-0 items-center gap-2">
+            {isAdmin ? (
+              <Link
+                href="/admin"
+                className="flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent"
+              >
+                <ArrowLeft className="h-4 w-4 shrink-0" />
+                返回管理端
+              </Link>
+            ) : null}
+            <GovernanceModal />
+            <SettingsMenu />
+            <UserNav />
+          </div>
         </div>
-        {/* 手机：整行独立第二行横向滚动；桌面：中间单行 */}
-        <nav className="order-3 flex w-full basis-full items-center gap-0.5 overflow-x-auto md:order-2 md:min-w-0 md:w-auto md:flex-1 md:basis-auto">
-          {isAdmin ? (
-            <Link
-              href="/admin"
-              className="flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent"
-            >
-              <ArrowLeft className="h-4 w-4 shrink-0" />
-              返回管理端
-            </Link>
-          ) : null}
+        {/* 第二行：导航横向铺开（全宽均分，窄屏横向滚动） */}
+        <nav className="flex items-center gap-1 overflow-x-auto pb-2">
           {LINKS.map((l) => (
             <Link
               key={l.href}
               href={l.href}
               className={cn(
-                "flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-sm transition-colors hover:bg-accent",
+                "flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent max-sm:flex-none",
                 pathname === l.href
                   ? "bg-accent font-medium text-accent-foreground"
                   : "text-muted-foreground"
               )}
             >
-              <l.icon className="h-4 w-4 shrink-0" />
-              {l.label}
+              <span className="inline-flex items-center gap-1.5">
+                <l.icon className="h-4 w-4 shrink-0" />
+                {l.label}
+              </span>
               {l.href === "/teacher/review" && reviewCount > 0 ? (
                 <Badge
                   variant="secondary"

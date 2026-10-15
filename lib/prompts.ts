@@ -3,6 +3,7 @@
  * 所有 JSON 输出均强约束格式；苏格拉底辅导严格不直接给答案。
  */
 import { TIER_META, type Tier } from "./mastery";
+import { formatStudent } from "./utils";
 
 export interface KpInfo {
   code: string;
@@ -52,8 +53,17 @@ ${JSON_ONLY}
 { "fixes": [ { "index": number, "answer": string, "analysis": string } ] }
 其中 index 为题目在列表中的序号（从 0 开始）。全部正确时 fixes 为空数组 []。`;
 
-/** 7.3 AI 作业批改（解答题） */
-export const GRADE_SYSTEM = `你是初中数学（或对应学科）批改老师。依据题目、标准答案和学生作答，按步骤给分。
+/** 7.3 AI 作业批改（解答题）—— 按学科错因词汇表 */
+const ERROR_TAG_VOCAB: Record<string, string[]> = {
+  math: ["计算失误", "概念混淆", "步骤遗漏", "审题错误", "其他"],
+  chinese: ["理解偏差", "要点遗漏", "表达不当", "审题不清", "其他"],
+  english: ["语法错误", "词汇拼写", "句型结构", "理解偏差", "其他"],
+};
+const ERROR_TAG_FALLBACK = ["概念不清", "要点遗漏", "表述不规范", "其他"];
+
+export function gradeSystem(subject: { code: string; name: string }): string {
+  const vocab = ERROR_TAG_VOCAB[subject.code] ?? ERROR_TAG_FALLBACK;
+  return `你是初中${subject.name}批改老师。依据题目、标准答案和学生作答，按步骤给分。
 要求：客观公正，不臆造学生未写的步骤；指出具体卡点与下一步建议。
 ${JSON_ONLY}
 输出 JSON 结构：
@@ -61,9 +71,10 @@ ${JSON_ONLY}
 - isCorrect：完全正确为 true。
 - score：按步骤完成度给 0-1 的分数。
 - confidence：对本次判分结论的自信程度（0-1）。判分依据明确、作答规范时接近 1；作答部分正确、步骤混乱、存在多种合理给分方式或关键信息模糊时降低；低于 0.7 表示建议教师复核。完全无法判断对错时给 0。
-- errorTags：从 ["计算失误","概念混淆","步骤遗漏","审题错误","其他"] 中选择，可多个。
+- errorTags：从 ${JSON.stringify(vocab)} 中选择，可多个。
 - errorAnalysis：一句话点明错在哪一步、为什么。
 - improvement：给出下一步具体可行的改进建议。`;
+}
 
 /** 7.4 AI 培养建议 */
 export function suggestPrompt(masteryList: { code: string; name: string; value: number }[]): string {
@@ -207,6 +218,7 @@ ${JSON_ONLY}
 
 export function tierAdviceContext(candidates: {
   name: string;
+  studentNo?: string | null;
   currentLabel: string;
   suggestedLabel: string;
   avg: number;
@@ -219,7 +231,7 @@ export function tierAdviceContext(candidates: {
       c.trendDelta === null
         ? "近 7 天数据不足"
         : `近 7 天趋势 ${c.trendDelta >= 0 ? "+" : ""}${Math.round(c.trendDelta * 100)} 个百分点`;
-    return `- ${c.name}：当前分层「${c.currentLabel}」，建议调整为「${c.suggestedLabel}」。平均掌握度 ${Math.round(c.avg * 100)}%；${trend}；薄弱知识点：${c.weakKps.join("、") || "无"}；高频错因：${c.errorTags.join("、") || "无"}`;
+    return `- ${formatStudent(c.name, c.studentNo)}：当前分层「${c.currentLabel}」，建议调整为「${c.suggestedLabel}」。平均掌握度 ${Math.round(c.avg * 100)}%；${trend}；薄弱知识点：${c.weakKps.join("、") || "无"}；高频错因：${c.errorTags.join("、") || "无"}`;
   });
   return `以下学生出现分层与实际掌握度不一致，请逐一给出调整建议：
 ${lines.join("\n")}`;
@@ -248,7 +260,7 @@ export function weeklyReportContext(opts: {
   weakKps: { code: string; name: string; classAvg: number }[];
   trendDelta: number;
   errorTags: { tag: string; count: number }[];
-  attentionStudents: { name: string; avg: number; trendDelta: number | null; reasons: string[] }[];
+  attentionStudents: { name: string; studentNo?: string | null; avg: number; trendDelta: number | null; reasons: string[] }[];
   tierDistribution: Record<string, number>;
 }): string {
   const pct = (v: number) => `${Math.round(v * 100)}%`;
@@ -266,7 +278,7 @@ export function weeklyReportContext(opts: {
       ? opts.attentionStudents
           .map(
             (s) =>
-              `- ${s.name}：平均掌握度 ${pct(s.avg)}；${s.reasons.join("；")}`
+              `- ${formatStudent(s.name, s.studentNo)}：平均掌握度 ${pct(s.avg)}；${s.reasons.join("；")}`
           )
           .join("\n")
       : "无";

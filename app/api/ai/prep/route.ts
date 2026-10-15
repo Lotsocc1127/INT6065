@@ -8,6 +8,7 @@ import { effectiveTierOf } from "@/lib/tier";
 import { parseArr } from "@/lib/json";
 import { PREP_SYSTEM, prepContext } from "@/lib/prompts";
 import { prisma } from "@/lib/prisma";
+import { formatStudent } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +44,7 @@ export async function POST(req: NextRequest) {
     // ---------- 学情数据（复用看板聚合逻辑） ----------
     const students = await prisma.user.findMany({
       where: { role: Role.STUDENT, classId: cls.id },
+      select: { id: true, name: true, studentNo: true, tierOverride: true },
       orderBy: { name: "asc" },
     });
     const masteries = await prisma.mastery.findMany({
@@ -57,7 +59,13 @@ export async function POST(req: NextRequest) {
     const studentRows = students.map((s) => {
       const map = masteryByStudent.get(s.id) ?? new Map();
       const values = kps.map((k) => map.get(k.id) ?? 0);
-      return { name: s.name, values, avg: avg(values), tier: effectiveTierOf(avg(values), s.tierOverride) };
+      return {
+        name: s.name,
+        studentNo: s.studentNo,
+        values,
+        avg: avg(values),
+        tier: effectiveTierOf(avg(values), s.tierOverride),
+      };
     });
     const kpClassAvg = kps.map((k, i) => avg(studentRows.map((r) => r.values[i])));
     const weakKps = kps
@@ -65,7 +73,7 @@ export async function POST(req: NextRequest) {
       .filter((k) => k.classAvg < 0.6);
 
     const tierGroups: Record<Tier, string[]> = { foundation: [], intermediate: [], advanced: [] };
-    for (const r of studentRows) tierGroups[r.tier].push(r.name);
+    for (const r of studentRows) tierGroups[r.tier].push(formatStudent(r.name, r.studentNo));
     const tiers = (Object.keys(tierGroups) as Tier[]).map((t) => ({
       label: TIER_META[t].label,
       count: tierGroups[t].length,

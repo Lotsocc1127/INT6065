@@ -294,10 +294,13 @@ export async function clearDemoData(): Promise<void> {
 
 export interface DemoSummary {
   classes: number;
+  classNames: string[];
   assignments: number;
   submissions: number;
   answers: number;
   pendingReview: number;
+  /** 演示周期回放时间线：每轮结束时全部班级的平均掌握度（内存态推导） */
+  timeline: { label: string; classAvg: number }[];
 }
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -326,6 +329,9 @@ export async function generateDemoCycle(opts?: { seed?: number }): Promise<DemoS
 
   const now = Date.now();
   const rounds = 5;
+  // 回放时间线：每轮结束后全部班级的平均掌握度（跨班累计，结束时求均值）
+  const roundSum = new Array(rounds).fill(0) as number[];
+  const roundCount = new Array(rounds).fill(0) as number[];
 
   // ---- 在内存中生成整周期数据 ----
   const questions: Prisma.QuestionCreateManyInput[] = [];
@@ -518,6 +524,9 @@ export async function generateDemoCycle(opts?: { seed?: number }): Promise<DemoS
           stuMap.set(kpId, next);
           points.push({ studentId: stu.id, kpId, value: next, at: new Date(roundTime.getTime() + DAY) });
         }
+        // 回放时间线累计：该生本轮结束后的平均掌握度
+        roundSum[r] += avg([...stuMap.values()]);
+        roundCount[r] += 1;
       }
     }
   }
@@ -577,9 +586,14 @@ export async function generateDemoCycle(opts?: { seed?: number }): Promise<DemoS
 
   return {
     classes: classes.length,
+    classNames: classes.map((c) => c.name),
     assignments: assignments.length,
     submissions: submissions.length,
     answers: answers.length,
     pendingReview: answers.filter((a) => a.reviewStatus === "needs_review").length,
+    timeline: roundSum.map((s, i) => ({
+      label: `第 ${i + 1} 周`,
+      classAvg: roundCount[i] ? s / roundCount[i] : 0,
+    })),
   };
 }

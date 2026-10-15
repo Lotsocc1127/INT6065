@@ -13,13 +13,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/app/empty-state";
 import { ConfidenceBadge } from "@/components/app/confidence-badge";
-import { fmtDateTime, pct } from "@/lib/utils";
+import { fmtDateTime, formatStudent, pct } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
 interface QueueItem {
   id: string;
+  studentId: string;
   studentName: string;
+  studentNo: string | null;
   className: string;
   assignmentId: string;
   assignmentTitle: string;
@@ -43,6 +45,7 @@ interface AppealItem {
   id: string;
   studentId: string;
   studentName: string;
+  studentNo: string | null;
   className: string;
   content: string;
   kpId: string | null;
@@ -126,7 +129,7 @@ export default function ReviewPage() {
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error ?? "操作失败");
-      toast.success(`已确认 AI 判分（${rec.studentName}）`);
+      toast.success(`已确认 AI 判分（${formatStudent(rec.studentName, rec.studentNo)}）`);
       setItems((list) => list?.filter((x) => x.id !== rec.id) ?? null);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "操作失败");
@@ -157,7 +160,7 @@ export default function ReviewPage() {
       toast.success(
         kps.length
           ? `复核已保存，${kps.length} 个知识点掌握度已联动更新`
-          : `复核已保存（${rec.studentName}）`
+          : `复核已保存（${formatStudent(rec.studentName, rec.studentNo)}）`
       );
       setItems((list) => list?.filter((x) => x.id !== rec.id) ?? null);
     } catch (e) {
@@ -179,8 +182,8 @@ export default function ReviewPage() {
       if (!r.ok) throw new Error(j.error ?? "操作失败");
       toast.success(
         decision === "accept"
-          ? `已采纳申诉，目标已视为达成（${item.studentName}）`
-          : `已驳回申诉（${item.studentName}）`
+          ? `已采纳申诉，目标已视为达成（${formatStudent(item.studentName, item.studentNo)}）`
+          : `已驳回申诉（${formatStudent(item.studentName, item.studentNo)}）`
       );
       setAppeals((list) => list?.filter((x) => x.id !== item.id) ?? null);
     } catch (e) {
@@ -216,8 +219,15 @@ export default function ReviewPage() {
               <Card key={rec.id}>
                 <CardHeader className="pb-2">
                   <div className="flex flex-wrap items-center gap-2 text-sm">
-                    <span className="font-medium">{rec.studentName}</span>
+                    <span className="font-medium">{formatStudent(rec.studentName, rec.studentNo)}</span>
                     <Badge variant="outline">{rec.className}</Badge>
+                    <Link
+                      href={`/teacher/students/${rec.studentId}`}
+                      className="text-muted-foreground hover:underline"
+                    >
+                      查看学生
+                      <ExternalLink className="ml-0.5 inline h-3 w-3" />
+                    </Link>
                     <Link
                       href={`/teacher/assignments/${rec.assignmentId}`}
                       className="text-muted-foreground hover:underline"
@@ -404,7 +414,7 @@ export default function ReviewPage() {
               <Card key={item.id}>
                 <CardHeader className="pb-2">
                   <div className="flex flex-wrap items-center gap-2 text-sm">
-                    <span className="font-medium">{item.studentName}</span>
+                    <span className="font-medium">{formatStudent(item.studentName, item.studentNo)}</span>
                     <Badge variant="outline">{item.className}</Badge>
                     <Link
                       href={`/teacher/students/${item.studentId}`}

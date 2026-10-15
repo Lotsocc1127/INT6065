@@ -33,6 +33,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/app/empty-state";
+import { formatStudent } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +44,7 @@ interface ClassInfo {
 interface StudentRow {
   id: string;
   name: string;
+  studentNo: string | null;
   goalCount: number;
 }
 
@@ -109,7 +111,7 @@ export default function TeacherStudentsPage() {
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error ?? "添加失败");
-      toast.success(`已添加学生 ${newName.trim()}`);
+      toast.success(`已添加学生 ${formatStudent(newName.trim(), j.studentNo)}`);
       setNewName("");
       setNewPassword("");
       void load(classId);
@@ -122,8 +124,8 @@ export default function TeacherStudentsPage() {
 
   async function doResetPassword() {
     if (!resetTarget) return;
-    if (resetPassword.trim().length < 4) {
-      toast.error("密码至少 4 位");
+    if (resetPassword.trim().length < 4 || resetPassword.trim().length > 32) {
+      toast.error("密码需 4–32 位");
       return;
     }
     setResetting(true);
@@ -135,7 +137,7 @@ export default function TeacherStudentsPage() {
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error ?? "重置失败");
-      toast.success(`已重置 ${resetTarget.name} 的密码`);
+      toast.success(`已重置 ${formatStudent(resetTarget.name, resetTarget.studentNo)} 的密码`);
       setResetTarget(null);
       setResetPassword("");
     } catch (e) {
@@ -154,7 +156,7 @@ export default function TeacherStudentsPage() {
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error ?? "操作失败");
-      toast.success(`已将 ${removeTarget.name} 移出班级（历史记录保留）`);
+      toast.success(`已将 ${formatStudent(removeTarget.name, removeTarget.studentNo)} 移出班级（历史记录保留）`);
       setRemoveTarget(null);
       void load(classId);
     } catch (e) {
@@ -205,11 +207,12 @@ export default function TeacherStudentsPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="new-password">初始密码（留空则 123456）</Label>
+            <Label htmlFor="new-password">初始密码（留空则 123456，4–32 位）</Label>
             <Input
               id="new-password"
               type="password"
               value={newPassword}
+              maxLength={32}
               onChange={(e) => setNewPassword(e.target.value)}
               placeholder="默认 123456"
             />
@@ -234,6 +237,7 @@ export default function TeacherStudentsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>姓名</TableHead>
+                  <TableHead>学号</TableHead>
                   <TableHead>目标数</TableHead>
                   <TableHead className="text-right">操作</TableHead>
                 </TableRow>
@@ -242,6 +246,7 @@ export default function TeacherStudentsPage() {
                 {students.map((s) => (
                   <TableRow key={s.id}>
                     <TableCell className="font-medium">{s.name}</TableCell>
+                    <TableCell className="text-muted-foreground">{s.studentNo ?? "—"}</TableCell>
                     <TableCell>
                       <Badge variant="outline">{s.goalCount} 个目标</Badge>
                     </TableCell>
@@ -274,7 +279,7 @@ export default function TeacherStudentsPage() {
                 ))}
                 {!students.length ? (
                   <TableRow>
-                    <TableCell colSpan={3} className="p-0">
+                    <TableCell colSpan={4} className="p-0">
                       <EmptyState title="该班级暂无学生" hint="使用上方表单添加学生账号。" />
                     </TableCell>
                   </TableRow>
@@ -291,7 +296,7 @@ export default function TeacherStudentsPage() {
           <DialogHeader>
             <DialogTitle>重置密码</DialogTitle>
             <DialogDescription>
-              为 {resetTarget?.name} 设置新密码（至少 4 位），并请提醒学生妥善保管。
+              为 {resetTarget ? formatStudent(resetTarget.name, resetTarget.studentNo) : ""} 设置新密码（4–32 位），并请提醒学生妥善保管。
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -300,8 +305,9 @@ export default function TeacherStudentsPage() {
               id="reset-password"
               type="password"
               value={resetPassword}
+              maxLength={32}
               onChange={(e) => setResetPassword(e.target.value)}
-              placeholder="至少 4 位"
+              placeholder="4–32 位"
             />
           </div>
           <DialogFooter>
@@ -321,7 +327,7 @@ export default function TeacherStudentsPage() {
           <DialogHeader>
             <DialogTitle>移出班级</DialogTitle>
             <DialogDescription>
-              确定将 {removeTarget?.name} 移出该班级吗？移出后该生无法再看到本班作业，但其历史作答与掌握度记录会保留。
+              确定将 {removeTarget ? formatStudent(removeTarget.name, removeTarget.studentNo) : ""} 移出该班级吗？移出后该生无法再看到本班作业，但其历史作答与掌握度记录会保留。
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

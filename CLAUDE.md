@@ -35,7 +35,37 @@
   要分批（10 条/批，见 lib/demo.ts clearDemoData）或串行
   （见 app/api/share/[token]/route.ts）
 - Windows 上跑 `npx prisma generate` 前**先停 dev server**（query engine
-  DLL 被占用会报 EPERM）
+  DLL 被占用会报 EPERM；TaskStop 后可能残留 node 进程占 3000 端口，
+  需 `netstat -ano | grep :3000` 找到 PID 后 `taskkill //PID <pid> //F`）
+
+## 学号与账号（第三批）
+
+- **学生有学号** `User.studentNo`（仅 STUDENT，全局递增两位零填充 "01"…，
+  `@unique`）。分配走 `lib/student-no.ts` 的 `createStudentWithNo`
+  （撞 P2002 重试），**不要**自行 `user.create` 学生（会漏学号）；既有
+  数据用 `npx tsx --env-file=.env scripts/backfill-student-no.ts` 回填
+  （幂等）。**班级内计数会与全局 @unique 撞车**，学号必须全局递增
+- 同班重名靠学号区分：全站学生显示统一用 `formatStudent(name, studentNo)`
+  （lib/utils.ts）输出「姓名（学号）」；**按姓名反查学生是 bug**（看板
+  分层名单曾因此链错学生），一律按 id
+- 密码统一 4–32 字符 + 72 字节上限（`lib/password.ts` 的 `validatePassword`，
+  4 条建号/重置路由 + 2 个表单都已接入）；管理员可删除教师
+  （`DELETE /api/admin/teachers/[id]`，教师无业务数据行，安全）
+- 错因标签按学科生成：`lib/prompts.ts` 的 `gradeSystem(subject)`（数学/
+  语文/英语各一套词汇表），seed 语文小测分池同理；**别再用固定的数学
+  标签池批改其他学科**
+
+## 演示数据（教师端）
+
+- 一键演示已从管理端移到**教师端看板**（components/app/demo-data-card.tsx），
+  API 在 `/api/demo`（TEACHER+ADMIN，原 `/api/admin/demo` 已删）；生成器
+  仍写入「前 3 个有学生的班级」真实学生（source="demo" 可整批清除），
+  演示作业在教师端作业列表带「演示」徽章
+- `generateDemoCycle` 返回 `classNames` 与 `timeline`（5 轮班级平均掌握度），
+  生成成功后看板自动刷新并弹出「演示周期回放」动画
+  （components/app/demo-replay-dialog.tsx，逐帧 null 占位 + connectNulls 画线）
+- e2e 组 14 的「生成前后待复核数」断言只以**非演示来源**数据为基准
+  （共享库常残留其他会话的演示数据，生成器会先清掉）
 
 ## LLM（多模型路由 F7）
 

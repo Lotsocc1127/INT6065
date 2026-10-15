@@ -42,6 +42,7 @@ export async function GET(req: NextRequest) {
         id: g.id,
         studentId: g.studentId,
         studentName: g.student.name,
+        studentNo: g.student.studentNo,
         className: g.student.class?.name ?? "未分班",
         content: g.content,
         kpId: g.kpId,

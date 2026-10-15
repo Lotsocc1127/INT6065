@@ -11,7 +11,7 @@ import { resolveChoiceLetter } from "./utils";
 import { avg, updateMastery, type Tier } from "./mastery";
 import { effectiveTierOf } from "./tier";
 import { llmConfigured, llmJson } from "./llm";
-import { GRADE_SYSTEM } from "./prompts";
+import { gradeSystem } from "./prompts";
 
 /** 学生某科有效层级：教师锁定（tierOverride）优先，否则该科掌握度平均 → tierOf（无数据视为基础层） */
 export async function studentTierOf(studentId: string, subjectId: string): Promise<Tier> {
@@ -110,6 +110,11 @@ export async function gradeAnswer(question: Question, response: string): Promise
     };
   }
   try {
+    // 按学科取错因词汇表（语文/英语不用数学专用标签）
+    const subject = await prisma.subject.findUnique({
+      where: { id: question.subjectId },
+      select: { code: true, name: true },
+    });
     const g = await llmJson<{
       isCorrect: boolean;
       score: number;
@@ -118,7 +123,7 @@ export async function gradeAnswer(question: Question, response: string): Promise
       errorAnalysis: string;
       improvement: string;
     }>([
-      { role: "system", content: GRADE_SYSTEM },
+      { role: "system", content: gradeSystem(subject ?? { code: "unknown", name: "通用" }) },
       {
         role: "user",
         content: [

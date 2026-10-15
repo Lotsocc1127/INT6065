@@ -45,6 +45,7 @@ model User {
   password  String
   classId   String?
   class     Class?  @relation(fields: [classId], references: [id])
+  studentNo String? @unique // 学号（仅 STUDENT；两位零填充全局递增，解决同班重名区分）
   tierOverride String? // "foundation"|"intermediate"|"advanced"：教师手动锁定分层；null = 自动计算
   answers       AnswerRecord[]
   masteries     Mastery[]

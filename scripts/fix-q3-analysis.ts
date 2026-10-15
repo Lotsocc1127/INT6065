@@ -7,7 +7,7 @@
 import { prisma } from "../lib/prisma";
 import { parseArr, toArrStr } from "../lib/json";
 import { llmConfigured, llmJson } from "../lib/llm";
-import { GRADE_SYSTEM } from "../lib/prompts";
+import { gradeSystem } from "../lib/prompts";
 
 async function main() {
   const rec = await prisma.answerRecord.findFirst({
@@ -32,7 +32,7 @@ async function main() {
       errorAnalysis: string;
       improvement: string;
     }>([
-      { role: "system", content: GRADE_SYSTEM },
+      { role: "system", content: gradeSystem({ code: "math", name: "数学" }) },
       {
         role: "user",
         content: [

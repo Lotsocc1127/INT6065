@@ -68,6 +68,7 @@ export async function GET(req: NextRequest) {
         id: a.id,
         title: a.title,
         type: a.type,
+        source: a.source,
         subjectCode: a.subject.code,
         subjectName: a.subject.name,
         className: a.class.name,

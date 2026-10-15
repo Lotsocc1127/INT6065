@@ -15,6 +15,7 @@ const TIER_ORDER: Record<Tier, number> = { foundation: 0, intermediate: 1, advan
 export interface TierCandidate {
   studentId: string;
   name: string;
+  studentNo: string | null;
   currentTier: Tier; // 有效分层（override ?? auto）
   autoTier: Tier;
   suggestedTier: Tier;
@@ -57,7 +58,7 @@ export async function suggestTierChanges(opts: {
 }): Promise<TierCandidate[]> {
   const students = await prisma.user.findMany({
     where: { role: Role.STUDENT, classId: opts.classId },
-    select: { id: true, name: true, tierOverride: true },
+    select: { id: true, name: true, studentNo: true, tierOverride: true },
     orderBy: { name: "asc" },
   });
   if (!students.length) return [];
@@ -91,6 +92,7 @@ export async function suggestTierChanges(opts: {
     return {
       studentId: s.id,
       name: s.name,
+      studentNo: s.studentNo,
       currentTier,
       autoTier,
       suggestedTier: autoTier,

@@ -11,6 +11,11 @@ export function pct(v: number | null | undefined, digits = 0): string {
   return `${(v * 100).toFixed(digits)}%`;
 }
 
+/** 学生显示名：有学号时「姓名（学号）」，否则仅姓名（解决同班重名区分） */
+export function formatStudent(name: string, studentNo?: string | null): string {
+  return studentNo ? `${name}（${studentNo}）` : name;
+}
+
 /** 掌握度数值配色（柔和不刺眼）：绿=达标 ≥80%，蓝=进阶中 ≥50%，琥珀=待提升 */
 export function masteryTextColor(v: number): string {
   if (v >= 0.8) return "text-emerald-600";

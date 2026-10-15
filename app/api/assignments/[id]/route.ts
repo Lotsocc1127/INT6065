@@ -67,6 +67,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
         id: s.id,
         studentId: s.studentId,
         studentName: s.student.name,
+        studentNo: s.student.studentNo,
         submittedAt: s.submittedAt,
         avgScore: (() => {
           // 只统计已批改的题目；全部未批改时显示「待批改」

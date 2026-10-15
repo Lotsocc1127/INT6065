@@ -48,6 +48,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       student: {
         id: student.id,
         name: student.name,
+        studentNo: student.studentNo,
         className: student.class?.name ?? null,
         tierOverride: student.tierOverride,
       },

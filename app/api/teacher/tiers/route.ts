@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
     const items = await suggestTierChanges({ subjectId: subject.id, classId: cls.id });
     const pinned = await prisma.user.findMany({
       where: { role: Role.STUDENT, classId: cls.id, tierOverride: { not: null } },
-      select: { id: true, name: true, tierOverride: true },
+      select: { id: true, name: true, studentNo: true, tierOverride: true },
       orderBy: { name: "asc" },
     });
     let aiGenerated = false;
@@ -45,6 +45,7 @@ export async function GET(req: NextRequest) {
               content: tierAdviceContext(
                 items.map((c) => ({
                   name: c.name,
+                  studentNo: c.studentNo,
                   currentLabel: c.currentTier,
                   suggestedLabel: c.suggestedTier,
                   avg: c.avg,

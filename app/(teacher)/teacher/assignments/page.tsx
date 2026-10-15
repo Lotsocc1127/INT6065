@@ -24,6 +24,7 @@ interface AssignmentRow {
   id: string;
   title: string;
   type: string;
+  source: string | null;
   subjectCode: string;
   subjectName: string;
   className: string;
@@ -88,6 +89,9 @@ export default function TeacherAssignmentsPage() {
                       </Badge>
                       {a.tiered ? (
                         <Badge className="bg-amber-100 text-amber-800">分层</Badge>
+                      ) : null}
+                      {a.source === "demo" ? (
+                        <Badge className="bg-violet-100 text-violet-800">演示</Badge>
                       ) : null}
                     </div>
                   </TableCell>

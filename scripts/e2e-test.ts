@@ -221,6 +221,11 @@ async function main() {
   assert(dash.stats.submissionRate > 0, `提交率 > 0（实际 ${dash.stats.submissionRate}%）`);
   const wf = dash.students.find((x: { name: string }) => x.name === student.name);
   assert(wf && wf.tier, `${student.name} 在看板中有分层（${wf.tier}）`);
+  assert(
+    typeof (wf as { studentNo?: unknown } | undefined)?.studentNo === "string" ||
+      (wf as { studentNo?: unknown } | undefined)?.studentNo === null,
+    "看板学生带 studentNo 字段（string 或 null）"
+  );
 
   console.log("\n== 10. 学生图谱 / 学习路径 / 成长档案 / 目标 ==");
   const pathRes = await s.fetch(`/api/student/path?subject=math`);
@@ -335,8 +340,11 @@ async function main() {
   const admin = await findLoginable("ADMIN");
   const ad = new Session();
   await ad.login(admin.id);
-  const qBefore = await (await t.fetch(`/api/review-queue?countOnly=1`)).json();
-  const countBefore = Number(qBefore.count) || 0;
+  // 共享库可能残留其他会话未清除的演示数据（生成器会先清一遍），
+  // 因此「生成前后待复核数」只用非演示来源的数量做基准，避免残留演示数据干扰断言。
+  const nonDemoPending = await prisma.answerRecord.count({
+    where: { reviewStatus: "needs_review", submission: { assignment: { source: { not: "demo" } } } },
+  });
 
   // 生成量 = 轮数 × 班级人数，班级人数随共享库漂移（组员增删过学生），
   // 所以期望值按「生成器会选中的那 3 个班」的实际人数推导，不写死 450/1350/240。
@@ -351,18 +359,30 @@ async function main() {
   const demoStudents = demoClasses.reduce((n, c) => n + c._count.students, 0);
   assert(demoClasses.length === 3 && demoStudents > 0, `可推导演示规模：${demoClasses.length} 班 / ${demoStudents} 人`);
 
-  const gen = await ad.fetch("/api/admin/demo", { method: "POST", body: JSON.stringify({ mode: "generate" }) });
+  const gen = await ad.fetch("/api/demo", { method: "POST", body: JSON.stringify({ mode: "generate" }) });
   assert(gen.status === 200, `生成演示数据 ${gen.status}`);
   const genJ = (await gen.json()) as {
     mode: string;
     classes: number;
+    classNames: string[];
     assignments: number;
     submissions: number;
     answers: number;
     pendingReview: number;
+    timeline: { label: string; classAvg: number }[];
   };
   assert(genJ.mode === "generate", "generate 响应 mode 正确");
   assert(genJ.classes === demoClasses.length, `覆盖 ${demoClasses.length} 个班级（实际 ${genJ.classes}）`);
+  assert(
+    genJ.classNames.length === demoClasses.length &&
+      genJ.classNames.every((n) => demoClasses.some((c) => c.name === n)),
+    `返回班级名单与推导一致（${genJ.classNames.join("、")}）`
+  );
+  assert(genJ.timeline.length === 5, `回放时间线 5 帧（实际 ${genJ.timeline.length}）`);
+  assert(
+    genJ.timeline.every((t, i) => t.label === `第 ${i + 1} 周` && t.classAvg >= 0 && t.classAvg <= 1),
+    "时间线帧标签与 classAvg 范围正确"
+  );
   assert(
     genJ.assignments === rounds * demoClasses.length,
     `生成 ${rounds * demoClasses.length} 份演示作业（实际 ${genJ.assignments}）`
@@ -389,14 +409,17 @@ async function main() {
   assert(demoAns === genJ.answers, `DB 中演示作答条数与响应一致（${demoAns}）`);
   const needsReview = await prisma.answerRecord.count({ where: { reviewStatus: "needs_review" } });
   assert(
-    needsReview === countBefore + genJ.pendingReview,
-    `DB 中待复核 = 生成前 ${countBefore} + 演示 ${genJ.pendingReview}（实际 ${needsReview}）`
+    needsReview === nonDemoPending + genJ.pendingReview,
+    `DB 中待复核 = 非演示 ${nonDemoPending} + 演示 ${genJ.pendingReview}（实际 ${needsReview}）`
   );
   const qGen = await (await t.fetch(`/api/review-queue?countOnly=1`)).json();
-  assert(Number(qGen.count) === countBefore + genJ.pendingReview, `复核队列含演示待复核项（${qGen.count}）`);
+  assert(
+    Number(qGen.count) === nonDemoPending + genJ.pendingReview,
+    `复核队列含演示待复核项（${qGen.count}）`
+  );
 
   // 幂等：重复生成不翻倍
-  const gen2 = await ad.fetch("/api/admin/demo", { method: "POST", body: JSON.stringify({ mode: "generate" }) });
+  const gen2 = await ad.fetch("/api/demo", { method: "POST", body: JSON.stringify({ mode: "generate" }) });
   assert(gen2.status === 200, `重复生成 ${gen2.status}`);
   const gen2J = await gen2.json();
   assert(gen2J.assignments === genJ.assignments, "重复生成后作业数不变（幂等）");
@@ -410,14 +433,14 @@ async function main() {
   assert(Boolean(realAsg) && realAsg!.source === null, "E2E 真实作业仍在且无 source 标记");
 
   // 清除：demo 数据归零、队列恢复、掌握度回退由 test-demo 覆盖
-  const clear = await ad.fetch("/api/admin/demo", { method: "POST", body: JSON.stringify({ mode: "clear" }) });
+  const clear = await ad.fetch("/api/demo", { method: "POST", body: JSON.stringify({ mode: "clear" }) });
   assert(clear.status === 200, `清除演示数据 ${clear.status}`);
   const clearJ = await clear.json();
   assert(clearJ.mode === "clear" && clearJ.cleared === true, "clear 响应正确");
   assert((await prisma.assignment.count({ where: { source: "demo" } })) === 0, "DB 中 demo 作业已清零");
   assert((await prisma.masteryPoint.count({ where: { source: "demo" } })) === 0, "demo 掌握度历史点已清零");
   const qAfter = await (await t.fetch(`/api/review-queue?countOnly=1`)).json();
-  assert(Number(qAfter.count) === countBefore, `复核队列恢复（${qAfter.count}）`);
+  assert(Number(qAfter.count) === nonDemoPending, `复核队列恢复（${qAfter.count}）`);
   assert(Boolean(await prisma.assignment.findUnique({ where: { id: assignmentId } })), "清除后真实作业仍在");
 
   console.log("\n== 15. F2 变式补救作业 ==");
@@ -685,8 +708,82 @@ async function main() {
     "采纳后从待复核申诉队列移除"
   );
 
+  console.log("\n== 20. 学号分配与同班重名 ==");
+  const dupName = "E2E重名学生";
+  const createdIds: string[] = [];
+  try {
+    const mk1 = await t.fetch("/api/teacher/students", {
+      method: "POST",
+      body: JSON.stringify({ name: dupName, classId: cls.id }),
+    });
+    const mk1J = await mk1.json();
+    assert(mk1.status === 201, `创建重名学生 1 ${mk1.status}`);
+    const mk2 = await t.fetch("/api/teacher/students", {
+      method: "POST",
+      body: JSON.stringify({ name: dupName, classId: cls.id }),
+    });
+    const mk2J = await mk2.json();
+    assert(mk2.status === 201, `创建重名学生 2 ${mk2.status}`);
+    createdIds.push(mk1J.id, mk2J.id);
+    assert(
+      typeof mk1J.studentNo === "string" && typeof mk2J.studentNo === "string",
+      "创建响应含 studentNo"
+    );
+    assert(mk1J.studentNo !== mk2J.studentNo, `两个重名学生学号不同（${mk1J.studentNo} vs ${mk2J.studentNo}）`);
+
+    const dashDup = (await (await t.fetch(`/api/teacher/dashboard?subject=math&classId=${cls.id}`)).json()) as {
+      students: { id: string; name: string; studentNo: string | null }[];
+      tiers: Record<string, { id: string; name: string; studentNo: string | null }[]>;
+    };
+    const tierEntries = Object.values(dashDup.tiers).flat().filter((x) => x.name === dupName);
+    assert(tierEntries.length === 2, `看板分层名单含 2 个同名条目（实际 ${tierEntries.length}）`);
+    assert(
+      tierEntries.every((x) => createdIds.includes(x.id) && typeof x.studentNo === "string"),
+      "分层条目按 id 区分且带学号"
+    );
+    for (const sid of createdIds) {
+      const row = dashDup.students.find((x) => x.id === sid);
+      assert(row && typeof row.studentNo === "string", `看板 students 含 ${sid} 的学号`);
+    }
+
+    // 学生列表接口：两名重名学生都带各自学号（登录下拉与全站显示由同一数据渲染）
+    const stuList = (await (
+      await t.fetch(`/api/teacher/students?classId=${cls.id}`)
+    ).json()) as { students: { id: string; name: string; studentNo: string | null }[] };
+    const dupRows = stuList.students.filter((x) => createdIds.includes(x.id));
+    assert(
+      dupRows.length === 2 &&
+        dupRows.every((x) => typeof x.studentNo === "string") &&
+        dupRows[0].studentNo !== dupRows[1].studentNo,
+      `学生列表含两名重名学生且学号不同（${dupRows.map((x) => x.studentNo).join("、")}）`
+    );
+    // 登录页（SSR 数据载荷）包含两个重名条目；下拉项由该数据渲染（portal 不在 SSR HTML 中，无法直接断言选项文本）
+    const loginHtml = await (await new Session().fetch("/login")).text();
+    assert(
+      loginHtml.split(dupName).length - 1 >= 2,
+      `登录页数据含两个重名条目（${loginHtml.split(dupName).length - 1} 处）`
+    );
+
+    // 密码上限回归：33 位被拒、3 位被拒
+    const pwLong = await t.fetch(`/api/teacher/students/${mk1J.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ password: "x".repeat(33) }),
+    });
+    assert(pwLong.status === 400, `33 位密码被拒 400（实际 ${pwLong.status}）`);
+    const pwShort = await t.fetch(`/api/teacher/students/${mk1J.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ password: "abc" }),
+    });
+    assert(pwShort.status === 400, `3 位密码被拒 400（实际 ${pwShort.status}）`);
+  } finally {
+    // 清理：新学生无任何 FK 数据行，可硬删；失败残留也不污染下次运行
+    if (createdIds.length) {
+      await prisma.user.deleteMany({ where: { id: { in: createdIds } } });
+    }
+  }
+
   console.log(
-    "\n✅ 全部端到端断言通过：闭环（布置 → 作答 → 批改 → 掌握度 → 错题 → 看板）+ F1 复核队列 + F2 补救聚合 + 学习目标申诉闭环 + 分层升降 + 周报 + 家长分享验证成功！"
+    "\n✅ 全部端到端断言通过：闭环（布置 → 作答 → 批改 → 掌握度 → 错题 → 看板）+ F1 复核队列 + F2 补救聚合 + 学习目标申诉闭环 + 分层升降 + 周报 + 家长分享 + 学号与重名验证成功！"
   );
 }
 

@@ -16,13 +16,14 @@ import {
 } from "@/components/ui/select";
 import { TierBadge } from "@/components/app/tier-badge";
 import { TIER_META, type Tier } from "@/lib/mastery";
-import { pct } from "@/lib/utils";
+import { formatStudent, pct } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
 interface TierCandidate {
   studentId: string;
   name: string;
+  studentNo: string | null;
   currentTier: Tier;
   autoTier: Tier;
   suggestedTier: Tier;
@@ -37,6 +38,7 @@ interface TierCandidate {
 interface PinnedStudent {
   id: string;
   name: string;
+  studentNo: string | null;
   tierOverride: string | null;
 }
 
@@ -204,12 +206,12 @@ export default function TiersPage() {
                   type="checkbox"
                   checked={selected.has(c.studentId)}
                   onChange={() => toggle(c.studentId)}
-                  aria-label={`选择 ${c.name}`}
+                  aria-label={`选择 ${formatStudent(c.name, c.studentNo)}`}
                   className="mt-1 h-4 w-4 accent-primary"
                 />
                 <div className="min-w-0 flex-1 space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium">{c.name}</span>
+                    <span className="font-medium">{formatStudent(c.name, c.studentNo)}</span>
                     <TierBadge tier={c.currentTier} />
                     <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
                     <TierBadge tier={c.suggestedTier} />
@@ -296,7 +298,7 @@ export default function TiersPage() {
                 className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3"
               >
                 <div className="flex items-center gap-2">
-                  <span className="font-medium">{p.name}</span>
+                  <span className="font-medium">{formatStudent(p.name, p.studentNo)}</span>
                   {p.tierOverride && (
                     <TierBadge tier={p.tierOverride as Tier} />
                   )}
@@ -309,7 +311,7 @@ export default function TiersPage() {
                   variant="outline"
                   size="sm"
                   disabled={applying}
-                  onClick={() => apply([{ studentId: p.id, tier: null }], `已清除 ${p.name} 的分层锁定`)}
+                  onClick={() => apply([{ studentId: p.id, tier: null }], `已清除 ${formatStudent(p.name, p.studentNo)} 的分层锁定`)}
                 >
                   <Unlock className="mr-1.5 h-3.5 w-3.5" />
                   清除锁定

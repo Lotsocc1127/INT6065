@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { FlaskConical, KeyRound, Plus, School, Trash2, UserCog } from "lucide-react";
+import { KeyRound, Plus, School, Trash2, UserCog } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -49,12 +49,12 @@ export default function AdminPage() {
   const [resetTarget, setResetTarget] = useState<TeacherRow | null>(null);
   const [resetPassword, setResetPassword] = useState("");
   const [resetting, setResetting] = useState(false);
+  // 删除教师
+  const [deleteTarget, setDeleteTarget] = useState<TeacherRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
   // 新建班级
   const [cName, setCName] = useState("");
   const [creating, setCreating] = useState(false);
-  // 演示数据
-  const [demoOpen, setDemoOpen] = useState<"generate" | "clear" | null>(null);
-  const [demoBusy, setDemoBusy] = useState(false);
 
   const loadTeachers = useCallback(async () => {
     fetch("/api/admin/teachers")
@@ -108,8 +108,8 @@ export default function AdminPage() {
 
   async function doResetPassword() {
     if (!resetTarget) return;
-    if (resetPassword.trim().length < 4) {
-      toast.error("密码至少 4 位");
+    if (resetPassword.trim().length < 4 || resetPassword.trim().length > 32) {
+      toast.error("密码需 4–32 位");
       return;
     }
     setResetting(true);
@@ -131,28 +131,20 @@ export default function AdminPage() {
     }
   }
 
-  async function doDemo(mode: "generate" | "clear") {
-    setDemoBusy(true);
+  async function deleteTeacher() {
+    if (!deleteTarget) return;
+    setDeleting(true);
     try {
-      const r = await fetch("/api/admin/demo", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode }),
-      });
+      const r = await fetch(`/api/admin/teachers/${deleteTarget.id}`, { method: "DELETE" });
       const j = await r.json();
-      if (!r.ok) throw new Error(j.error ?? "操作失败");
-      if (mode === "generate") {
-        toast.success(
-          `演示数据已生成：${j.classes} 个班 / ${j.assignments} 份作业 / ${j.submissions} 份提交 / ${j.answers} 条作答（待复核 ${j.pendingReview} 条）`
-        );
-      } else {
-        toast.success("演示数据已清除，真实数据不受影响");
-      }
-      setDemoOpen(null);
+      if (!r.ok) throw new Error(j.error ?? "删除失败");
+      toast.success(`已删除教师 ${deleteTarget.name}`);
+      setDeleteTarget(null);
+      void loadTeachers();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "操作失败");
+      toast.error(e instanceof Error ? e.message : "删除失败");
     } finally {
-      setDemoBusy(false);
+      setDeleting(false);
     }
   }
 
@@ -201,11 +193,12 @@ export default function AdminPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="teacher-password">初始密码（留空则 123456）</Label>
+            <Label htmlFor="teacher-password">初始密码（留空则 123456，4–32 位）</Label>
             <Input
               id="teacher-password"
               type="password"
               value={tPassword}
+              maxLength={32}
               onChange={(e) => setTPassword(e.target.value)}
               placeholder="默认 123456"
             />
@@ -238,18 +231,29 @@ export default function AdminPage() {
                   <TableRow key={t.id}>
                     <TableCell className="font-medium">{t.name}</TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-1"
-                        onClick={() => {
-                          setResetTarget(t);
-                          setResetPassword("");
-                        }}
-                      >
-                        <KeyRound className="h-3.5 w-3.5" />
-                        重置密码
-                      </Button>
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1"
+                          onClick={() => {
+                            setResetTarget(t);
+                            setResetPassword("");
+                          }}
+                        >
+                          <KeyRound className="h-3.5 w-3.5" />
+                          重置密码
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="gap-1 text-destructive"
+                          onClick={() => setDeleteTarget(t)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          删除
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -308,56 +312,21 @@ export default function AdminPage() {
         </CardContent>
       </Card>
 
-      {/* 演示数据 */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FlaskConical className="h-5 w-5" />
-            演示数据
-          </CardTitle>
-          <CardDescription>
-            一键生成近 2.5 周的演示教学周期（3 个班 × 5 轮数学作业，含待复核数据），
-            用于课堂展示与功能验收；与真实数据隔离，可随时清除或重建。
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap items-center gap-2">
-          <Button
-            onClick={() => setDemoOpen("generate")}
-            disabled={demoBusy}
-            className="gap-1.5"
-          >
-            <FlaskConical className="h-4 w-4" />
-            {demoBusy ? "处理中…" : "生成演示数据"}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => setDemoOpen("clear")}
-            disabled={demoBusy}
-            className="gap-1.5"
-          >
-            <Trash2 className="h-4 w-4" />
-            清除演示数据
-          </Button>
-        </CardContent>
-      </Card>
-
-      {/* 演示数据确认对话框 */}
-      <Dialog open={Boolean(demoOpen)} onOpenChange={(o) => !o && setDemoOpen(null)}>
+      {/* 删除教师确认 */}
+      <Dialog open={Boolean(deleteTarget)} onOpenChange={(o) => !o && setDeleteTarget(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{demoOpen === "generate" ? "生成演示数据" : "清除演示数据"}</DialogTitle>
+            <DialogTitle>删除教师</DialogTitle>
             <DialogDescription>
-              {demoOpen === "generate"
-                ? "将清理并重建 3 个班近 2.5 周的数学演示数据（作业、提交、掌握度历史与错题本），不影响任何真实数据。生成需要几秒钟，请勿关闭页面。"
-                : "将清除全部演示数据，并把受影响的掌握度回退到演示前的状态。真实数据不受影响。"}
+              确定删除教师 {deleteTarget?.name} 吗？该操作不可撤销。若该教师名下存在业务数据将无法删除。
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDemoOpen(null)} disabled={demoBusy}>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleting}>
               取消
             </Button>
-            <Button onClick={() => demoOpen && doDemo(demoOpen)} disabled={demoBusy}>
-              {demoBusy ? "处理中…" : demoOpen === "generate" ? "确认生成" : "确认清除"}
+            <Button variant="destructive" onClick={deleteTeacher} disabled={deleting}>
+              {deleting ? "删除中…" : "确认删除"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -369,7 +338,7 @@ export default function AdminPage() {
           <DialogHeader>
             <DialogTitle>重置教师密码</DialogTitle>
             <DialogDescription>
-              为 {resetTarget?.name} 设置新密码（至少 4 位），并请提醒其妥善保管。
+              为 {resetTarget?.name} 设置新密码（4–32 位），并请提醒其妥善保管。
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -378,8 +347,9 @@ export default function AdminPage() {
               id="admin-reset-password"
               type="password"
               value={resetPassword}
+              maxLength={32}
               onChange={(e) => setResetPassword(e.target.value)}
-              placeholder="至少 4 位"
+              placeholder="4–32 位"
             />
           </div>
           <DialogFooter>

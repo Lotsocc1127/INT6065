@@ -10,10 +10,10 @@ export const maxDuration = 300;
 /** 模块级锁：防连点（同一 warm 实例内生效） */
 let generating = false;
 
-/** POST /api/admin/demo —— 一键演示数据：{mode:"generate"|"clear"} */
+/** POST /api/demo —— 一键演示数据（教师端/管理端）：{mode:"generate"|"clear"} */
 export async function POST(req: NextRequest) {
   try {
-    await requireApiUser(["ADMIN"]);
+    await requireApiUser(["TEACHER", "ADMIN"]);
     const body = await req.json();
     const mode = String(body?.mode ?? "generate") === "clear" ? "clear" : "generate";
     if (mode === "clear") {

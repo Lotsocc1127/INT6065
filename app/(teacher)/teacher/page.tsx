@@ -24,7 +24,8 @@ import { TierBadge, TierLegend } from "@/components/app/tier-badge";
 import { RemedialDialog } from "@/components/app/remedial-dialog";
 import { hbarOption, heatmapOption, lineOption } from "@/lib/charts";
 import { TIER_META, type Tier } from "@/lib/mastery";
-import { pct } from "@/lib/utils";
+import { formatStudent, pct } from "@/lib/utils";
+import { DemoDataCard } from "@/components/app/demo-data-card";
 
 export const dynamic = "force-dynamic";
 
@@ -36,13 +37,14 @@ interface DashboardData {
   students: {
     id: string;
     name: string;
+    studentNo: string | null;
     avg: number;
     tier: Tier;
     tierAuto: Tier;
     tierOverride: string | null;
     values: Record<string, number>;
   }[];
-  tiers: Record<Tier, string[]>;
+  tiers: Record<Tier, { id: string; name: string; studentNo: string | null }[]>;
   stats: {
     classAvg: number;
     proficient: number;
@@ -68,6 +70,8 @@ function DashboardInner() {
   const [error, setError] = useState("");
   const [tierFilter, setTierFilter] = useState<"all" | Tier>("all");
   const [remedialOpen, setRemedialOpen] = useState(false);
+  // 演示数据生成/清除后自增触发看板重拉（数据流动）
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     fetch("/api/subjects")
@@ -88,7 +92,7 @@ function DashboardInner() {
         setData(j);
       })
       .catch((e) => setError(e.message));
-  }, [subject, classId]);
+  }, [subject, classId, refreshKey]);
 
   // 热力图行：按分层筛选 + 平均掌握度升序（ECharts y 轴类目索引 0 渲染在底部，故薄弱学生靠下）
   const displayStudents = useMemo(() => {
@@ -101,7 +105,7 @@ function DashboardInner() {
   const heatmap = useMemo(() => {
     if (!data) return null;
     return heatmapOption({
-      students: displayStudents.map((s) => s.name),
+      students: displayStudents.map((s) => formatStudent(s.name, s.studentNo)),
       kps: data.kps.map((k) => `${k.code} ${k.name}`),
       data: displayStudents.flatMap((s, si) =>
         data.kps.map((k, ki) => [ki, si, s.values[k.id] ?? 0] as [number, number, number])
@@ -167,6 +171,8 @@ function DashboardInner() {
       </div>
 
       <QuoteCard />
+
+      <DemoDataCard onChanged={() => setRefreshKey((k) => k + 1)} />
 
       {error ? (
         <Card>
@@ -268,13 +274,14 @@ function DashboardInner() {
                       </div>
                       <div className="flex flex-wrap gap-1.5">
                         {data.tiers[t].length ? (
-                          data.tiers[t].map((name) => {
-                            const stu = data.students.find((s) => s.name === name)!;
+                          data.tiers[t].map((entry) => {
+                            // 重名安全：按 id 反查（不能按 name，同班重名会链错学生）
+                            const stu = data.students.find((s) => s.id === entry.id);
                             return (
-                              <Link key={name} href={`/teacher/students/${stu.id}`}>
+                              <Link key={entry.id} href={`/teacher/students/${entry.id}`}>
                                 <Badge variant="outline" className="cursor-pointer hover:bg-accent">
-                                  {name}
-                                  {stu.tierOverride && <Lock className="ml-1 h-3 w-3" />}
+                                  {formatStudent(entry.name, entry.studentNo)}
+                                  {stu?.tierOverride && <Lock className="ml-1 h-3 w-3" />}
                                 </Badge>
                               </Link>
                             );

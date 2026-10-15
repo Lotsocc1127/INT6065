@@ -86,6 +86,10 @@ async function main() {
     "/teacher?subject=english",
     "/teacher/assignments",
     "/teacher/assignments/new",
+    "/teacher/review",
+    "/teacher/tiers",
+    "/teacher/weekly-report",
+    "/teacher/students",
   ];
   // 作业详情与学生详情需要真实 id
   const assignment = await prisma.assignment.findFirstOrThrow();
@@ -110,6 +114,26 @@ async function main() {
     `/student/assignments/${submission.assignmentId}`, // 已提交作业（批改视图）
   ];
   await checkPages("学生端", student.id, studentPaths);
+
+  // 管理端页面（含教师端看板预览）
+  const admin = await prisma.user.findFirstOrThrow({ where: { role: "ADMIN" } });
+  await checkPages("管理端", admin.id, ["/admin", "/teacher"]);
+
+  // 未登录时登录页（下拉含全部账号）
+  {
+    const ctx = await browser.newContext({ colorScheme: "dark" });
+    const page = await ctx.newPage();
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(`[pageerror] ${e.message}`));
+    page.on("console", (m) => {
+      if (m.type() === "error") errors.push(`[console.error] ${m.text()}`);
+    });
+    console.log("\n== 匿名 打开 /login ==");
+    await page.goto(`${BASE}/login`, { waitUntil: "networkidle", timeout: 30000 });
+    await page.waitForTimeout(800);
+    console.log(errors.length ? `  ❌ ${errors.join("\n  ")}` : "  ✓ 无错误");
+    await ctx.close();
+  }
 
   await browser.close();
   console.log("\n浏览器复现完成");

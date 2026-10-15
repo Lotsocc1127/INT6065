@@ -21,7 +21,7 @@ import { StatCard } from "@/components/app/stat-card";
 import { TierBadge, TierLegend } from "@/components/app/tier-badge";
 import { hbarOption, lineOption } from "@/lib/charts";
 import { TIER_META, type Tier } from "@/lib/mastery";
-import { pct } from "@/lib/utils";
+import { formatStudent, pct } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +40,7 @@ interface WeeklyStats {
   attentionStudents: {
     id: string;
     name: string;
+    studentNo: string | null;
     avg: number;
     trendDelta: number | null;
     reasons: string[];
@@ -331,7 +332,7 @@ export default function WeeklyReportPage() {
                   stats.attentionStudents.map((s) => (
                     <div key={s.id} className="rounded-lg border p-3 text-sm">
                       <div className="flex items-center justify-between">
-                        <span className="font-medium">{s.name}</span>
+                        <span className="font-medium">{formatStudent(s.name, s.studentNo)}</span>
                         <span className="tabular-nums text-muted-foreground">{pct(s.avg)}</span>
                       </div>
                       <ul className="mt-1 list-inside list-disc text-xs text-muted-foreground">

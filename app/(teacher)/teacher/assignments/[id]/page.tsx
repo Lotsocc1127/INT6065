@@ -14,7 +14,7 @@ import { EmptyState } from "@/components/app/empty-state";
 import { ConfidenceBadge } from "@/components/app/confidence-badge";
 import { hbarOption } from "@/lib/charts";
 import { TIER_META, type Tier } from "@/lib/mastery";
-import { choiceAnswerText, fmtDate, fmtDateTime, fmtDuration, pct } from "@/lib/utils";
+import { choiceAnswerText, fmtDate, fmtDateTime, fmtDuration, formatStudent, pct } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -48,6 +48,7 @@ interface SubmissionRow {
   id: string;
   studentId: string;
   studentName: string;
+  studentNo: string | null;
   submittedAt: string;
   avgScore: number | null;
   answers: AnswerRow[];
@@ -282,7 +283,7 @@ export default function AssignmentDetailPage({ params }: { params: { id: string 
                   className={cn("shrink-0 gap-1.5", !active && "bg-background")}
                   onClick={() => setSelectedId(s.id)}
                 >
-                  {s.studentName}
+                  {formatStudent(s.studentName, s.studentNo)}
                   <Badge
                     variant={active ? "secondary" : "outline"}
                     className="px-1.5 py-0 text-[10px]"
@@ -408,7 +409,7 @@ export default function AssignmentDetailPage({ params }: { params: { id: string 
               <div className="space-y-4 lg:col-span-2">
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-base">本次作答统计 · {selected.studentName}</CardTitle>
+                    <CardTitle className="text-base">本次作答统计 · {formatStudent(selected.studentName, selected.studentNo)}</CardTitle>
                     <CardDescription>{fmtDateTime(selected.submittedAt)} 提交</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">

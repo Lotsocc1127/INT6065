@@ -5,6 +5,7 @@ import { llmJson } from "@/lib/llm";
 import { parseArr } from "@/lib/json";
 import { SUBMISSION_ANALYSIS_SYSTEM } from "@/lib/prompts";
 import { prisma } from "@/lib/prisma";
+import { formatStudent } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -68,7 +69,7 @@ export async function POST(req: NextRequest) {
         { role: "system", content: SUBMISSION_ANALYSIS_SYSTEM },
         {
           role: "user",
-          content: `学生：${submission.student.name}\n科目：${questions[0]?.subject.name ?? "—"}\n本次作业逐题数据：\n${answerLines}\n\n请基于以上数据给出个性化分析与发展建议。`,
+          content: `学生：${formatStudent(submission.student.name, submission.student.studentNo)}\n科目：${questions[0]?.subject.name ?? "—"}\n本次作业逐题数据：\n${answerLines}\n\n请基于以上数据给出个性化分析与发展建议。`,
         },
       ],
       { maxTokens: 4096, task: "analysis" }
