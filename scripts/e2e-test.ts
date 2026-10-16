@@ -5,9 +5,14 @@
  */
 import { PrismaClient } from "@prisma/client";
 import { llmConfigured } from "../lib/llm";
+import { cleanupRun, type RunCreated } from "./e2e-cleanup";
 
 const BASE = "http://localhost:3000";
 const prisma = new PrismaClient();
+
+// 本轮创建的作业/目标/分享链接：结束后（无论成败）由 cleanupRun 删除并恢复该生统计，
+// 避免测试数据残留线上共享库（作业/目标/提交/掌握度/错题本都被真实账号污染）。
+let createdState: RunCreated | null = null;
 
 class Session {
   cookies = new Map<string, string>();
@@ -103,6 +108,7 @@ async function main() {
   const math = await prisma.subject.findUniqueOrThrow({ where: { code: "math" } });
   const cls = await prisma.class.findUniqueOrThrow({ where: { id: student.classId! } });
   const kps = await prisma.knowledgePoint.findMany({ where: { subjectId: math.id } });
+  createdState = { studentId: student.id, assignmentIds: [], goalIds: [], shareLinkIds: [] };
 
   console.log(`\n== 1. 教师 ${teacher.name} 登录 ==`);
   const t = new Session();
@@ -126,6 +132,7 @@ async function main() {
   });
   assert(aRes.status === 201, `布置作业 ${aRes.status}`);
   const { id: assignmentId } = await aRes.json();
+  createdState!.assignmentIds.push(assignmentId);
 
   console.log("\n== 3. 学生 " + student.name + " 登录 ==");
   const s = new Session();
@@ -240,6 +247,7 @@ async function main() {
     body: JSON.stringify({ content: "E2E 验证目标：本周完成 10 道练习" }),
   });
   assert(goalRes.status === 201, `目标设定 ${goalRes.status}`);
+  createdState!.goalIds.push(((await goalRes.json()) as { id: string }).id);
 
   console.log("\n== 11. 重复提交被拒绝（演示规则） ==");
   const dupRes = await s.fetch(`/api/assignments/${assignmentId}/submit`, {
@@ -273,6 +281,7 @@ async function main() {
   });
   assert(orA.status === 201, `布置解答题作业 ${orA.status}`);
   const orAssignmentId = (await orA.json()).id as string;
+  createdState!.assignmentIds.push(orAssignmentId);
   const orSubmit = await s.fetch(`/api/assignments/${orAssignmentId}/submit`, {
     method: "POST",
     body: JSON.stringify({
@@ -566,6 +575,7 @@ async function main() {
   assert(/^[A-Za-z0-9_-]{32}$/.test(raw), `token 为 32 字符 base64url（实际 ${raw.length}）`);
   const dbLink = await prisma.shareLink.findFirst({ where: { studentId: student.id }, orderBy: { createdAt: "desc" } });
   assert(dbLink && dbLink.tokenHash.length === 64 && dbLink.tokenHash !== raw, "DB 存 64 位 sha256 哈希且不等于 raw");
+  createdState!.shareLinkIds.push(dbLink!.id);
 
   // 无 cookie 的裸会话公开访问（无需登录）
   const pub = new Session();
@@ -619,6 +629,7 @@ async function main() {
   });
   assert(g1Res.status === 201, `目标设定 ${g1Res.status}`);
   const goal1 = await g1Res.json();
+  createdState!.goalIds.push(goal1.id);
   assert(goal1.appealStatus === "NONE" && goal1.challenged === false, "新目标申诉状态为 NONE");
 
   // 理由选填：不填也能提交申诉
@@ -691,6 +702,7 @@ async function main() {
       body: JSON.stringify({ content: "E2E 申诉闭环目标（采纳路径）" }),
     })
   ).json();
+  createdState!.goalIds.push(goal2.id);
   await s.fetch(`/api/goals/${goal2.id}`, {
     method: "PATCH",
     body: JSON.stringify({ action: "appeal", reason: "E2E：申请直接视为达成" }),
@@ -782,14 +794,33 @@ async function main() {
     }
   }
 
+  // 自清理：删除本轮创建的作业/目标/分享链接，并按剩余提交恢复该生掌握度与错题本
+  // （失败路径同样清理，见 main().catch；两处都容错——清理失败不影响断言结果，只提示残留风险）
+  if (createdState) {
+    try {
+      await cleanupRun(prisma, createdState);
+      console.log("\n🧹 已清理本轮 e2e 数据并恢复学生统计");
+    } catch (e) {
+      console.error("\n⚠️ 自清理失败（共享库可能残留本轮数据）:", e instanceof Error ? e.message : e);
+    }
+  }
+
   console.log(
     "\n✅ 全部端到端断言通过：闭环（布置 → 作答 → 批改 → 掌握度 → 错题 → 看板）+ F1 复核队列 + F2 补救聚合 + 学习目标申诉闭环 + 分层升降 + 周报 + 家长分享 + 学号与重名验证成功！"
   );
 }
 
 main()
-  .catch((e) => {
+  .catch(async (e) => {
     console.error("\n❌ 验证失败:", e.message);
+    if (createdState) {
+      try {
+        await cleanupRun(prisma, createdState);
+        console.error("🧹 已清理本轮已创建的部分 e2e 数据");
+      } catch (ce) {
+        console.error("⚠️ 失败路径清理未完成（共享库可能残留本轮数据）:", ce instanceof Error ? ce.message : ce);
+      }
+    }
     process.exit(1);
   })
   .finally(() => prisma.$disconnect());

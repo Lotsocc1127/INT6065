@@ -24,7 +24,12 @@
   Vercel 环境变量指向同一库）：任何 `db push` / `seed` 都会直接影响线上；
   **禁止 `seed --force`**（2026-10-14 曾把线上真实测试数据覆盖掉）。
   e2e 也会往这个库写数据（demo 生成/清除、测试作业与目标、分享链接），
-  多台机器/多会话时**错峰跑 e2e**，避免互相干扰
+  但**跑完自清理**（`scripts/e2e-cleanup.ts` 的 `cleanupRun`，测试成功/失败
+  路径都会执行：删本轮作业/目标/分享链接，并从当前值逆推被删提交的 6:4
+  加权、再重放剩余提交，恢复该生掌握度与错题本）；残留只可能来自旧版测试
+  或清理失败。多台机器/多会话时仍要**错峰跑 e2e**（逆推假设「被删提交都
+  晚于剩余提交」，并发交错会引入小误差）。历史残留可用
+  `npx tsx --env-file=.env scripts/cleanup-e2e-data.ts` 预览/`--apply` 清理
 - **禁止在 Pooled 连接上跑交互式事务**（`$transaction(async tx => ...)`）：
   逐条查询往返慢，超 Prisma 默认 5s 事务超时后报 P2028
   （Transaction not found / already closed）。写操作用**批量事务**
