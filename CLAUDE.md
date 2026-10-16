@@ -5,12 +5,13 @@
 
 ## 网络
 
-- **本机（2026-10-14 复测）：github.com 与 `int-6065.vercel.app` 均可直连**，
-  且未配置任何 git 代理（`git config --global --get http.proxy` 无输出）。
-  此前「无法直连 + 代理 6450」的记录已失效——**别照抄旧结论，先复测**：
+- **本机（2026-10-16 复测）：github.com 直连已不通**（curl 返回 000，git 直连
+  报 TLS unexpected eof），已挂代理 `http://127.0.0.1:6450`（代理客户端在运行，
+  经代理 200、push 正常）。直连/代理状态多次反复——**别照抄旧结论，先复测**：
   `curl -s -o /dev/null -m 10 -w '%{http_code}\n' https://github.com`
-- 若哪天又不通，才需要挂回代理：
-  `git config --global http.proxy http://127.0.0.1:<代理客户端端口>`
+  不通时确认代理客户端已启动，并
+  `git config --global http.proxy http://127.0.0.1:6450`；
+  哪天直连恢复，`git config --global --unset http.proxy` 摘掉代理
 - 组员（国内网络）访问线上域名的方案（自定义域名 + Cloudflare / Sealos /
   国内服务器）见 DEPLOY.md
 
