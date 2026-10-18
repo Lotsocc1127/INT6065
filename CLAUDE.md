@@ -58,8 +58,10 @@
   4 条建号/重置路由 + 2 个表单都已接入）；管理员可删除教师
   （`DELETE /api/admin/teachers/[id]`，教师无业务数据行，安全）
 - 错因标签按学科生成：`lib/prompts.ts` 的 `gradeSystem(subject)`（数学/
-  语文/英语各一套词汇表），seed 语文小测分池同理；**别再用固定的数学
-  标签池批改其他学科**
+  语文/英语各一套词汇表），seed 语文小测分池同理；LLM 返回的标签还会经
+  `normalizeErrorTags` 收敛到本学科词汇表（表外标签如「计算错误」→「其他」，
+  防 LLM 不遵守词汇表）；**别再用固定的数学标签池批改其他学科**
+  （修复前语文存量数据仍带数学标签，见 `scripts/fix-subject-error-tags.ts`）
 
 ## 演示数据（教师端）
 

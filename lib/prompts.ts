@@ -61,6 +61,25 @@ const ERROR_TAG_VOCAB: Record<string, string[]> = {
 };
 const ERROR_TAG_FALLBACK = ["概念不清", "要点遗漏", "表述不规范", "其他"];
 
+/**
+ * 把 LLM 返回的错因标签收敛到该学科词汇表内（防 LLM 输出表外标签，
+ * 如语文题上出现「计算失误/计算错误」）：表外标签归入「其他」，去重并保持顺序。
+ */
+export function normalizeErrorTags(subjectCode: string, tags: string[]): string[] {
+  const vocab = ERROR_TAG_VOCAB[subjectCode] ?? ERROR_TAG_FALLBACK;
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of tags) {
+    const t = String(raw).trim();
+    if (!t) continue;
+    const tag = vocab.includes(t) ? t : "其他";
+    if (seen.has(tag)) continue;
+    seen.add(tag);
+    out.push(tag);
+  }
+  return out;
+}
+
 export function gradeSystem(subject: { code: string; name: string }): string {
   const vocab = ERROR_TAG_VOCAB[subject.code] ?? ERROR_TAG_FALLBACK;
   return `你是初中${subject.name}批改老师。依据题目、标准答案和学生作答，按步骤给分。

@@ -11,7 +11,7 @@ import { resolveChoiceLetter } from "./utils";
 import { avg, updateMastery, type Tier } from "./mastery";
 import { effectiveTierOf } from "./tier";
 import { llmConfigured, llmJson } from "./llm";
-import { gradeSystem } from "./prompts";
+import { gradeSystem, normalizeErrorTags } from "./prompts";
 
 /** 学生某科有效层级：教师锁定（tierOverride）优先，否则该科掌握度平均 → tierOf（无数据视为基础层） */
 export async function studentTierOf(studentId: string, subjectId: string): Promise<Tier> {
@@ -143,7 +143,10 @@ export async function gradeAnswer(question: Question, response: string): Promise
     return {
       isCorrect,
       score: clamp(Number(g.score) || 0, 0, 1),
-      errorTags: Array.isArray(g.errorTags) ? g.errorTags : [],
+      errorTags: normalizeErrorTags(
+        subject?.code ?? "unknown",
+        Array.isArray(g.errorTags) ? g.errorTags : []
+      ),
       errorAnalysis: g.errorAnalysis ?? null,
       improvement: g.improvement ?? null,
       aiGraded: true,
