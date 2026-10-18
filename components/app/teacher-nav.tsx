@@ -8,6 +8,7 @@ import { ArrowLeft, ArrowUpDown, BookOpen, ClipboardCheck, ClipboardList, FilePl
 import { BrandLogo } from "@/components/app/brand-logo";
 import { GovernanceModal } from "@/components/app/governance-modal";
 import { SettingsMenu } from "@/components/app/settings-menu";
+import { NotificationBell } from "@/components/app/notification-bell";
 import { UserNav } from "@/components/app/user-nav";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -62,6 +63,7 @@ export function TeacherNav() {
             ) : null}
             <GovernanceModal />
             <SettingsMenu />
+            <NotificationBell />
             <UserNav />
           </div>
         </div>

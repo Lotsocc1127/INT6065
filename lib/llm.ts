@@ -30,6 +30,7 @@ export type LlmTask =
   | "prep"
   | "analysis"
   | "report"
+  | "lecture"
   | "default";
 
 export interface LlmOptions {

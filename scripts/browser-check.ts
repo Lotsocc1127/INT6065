@@ -94,6 +94,7 @@ async function main() {
   // 作业详情与学生详情需要真实 id
   const assignment = await prisma.assignment.findFirstOrThrow();
   teacherPaths.push(`/teacher/assignments/${assignment.id}`);
+  teacherPaths.push(`/teacher/assignments/${assignment.id}/lecture`);
   teacherPaths.push(`/teacher/students/${student.id}`);
   await checkPages("教师端", teacher.id, teacherPaths);
 

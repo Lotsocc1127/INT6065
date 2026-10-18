@@ -89,8 +89,27 @@ export async function POST(req: NextRequest) {
     };
     if (!recordId) return ok({ error: "缺少 recordId" }, 400);
 
-    const record = await prisma.answerRecord.findUnique({ where: { id: recordId } });
+    const record = await prisma.answerRecord.findUnique({
+      where: { id: recordId },
+      include: {
+        submission: { select: { assignmentId: true, assignment: { select: { title: true, source: true } } } },
+      },
+    });
     if (!record) return ok({ error: "作答记录不存在" }, 404);
+
+    // 通知学生：批改已复核（演示数据不打扰真实学生）
+    async function notifyReviewed() {
+      if (record!.submission.assignment.source === "demo") return;
+      await prisma.notification.create({
+        data: {
+          userId: record!.studentId,
+          type: "reviewed",
+          title: "批改已复核",
+          body: `你在「${record!.submission.assignment.title}」中的作答已由老师复核`,
+          link: `/student/assignments/${record!.submission.assignmentId}`,
+        },
+      });
+    }
 
     if (action === "confirm") {
       if (record.isCorrect == null || record.score == null) {
@@ -105,6 +124,7 @@ export async function POST(req: NextRequest) {
         confidence: 1,
         reviewer: "teacher",
       });
+      await notifyReviewed();
       return ok({ mastery });
     }
 
@@ -122,6 +142,7 @@ export async function POST(req: NextRequest) {
         confidence: 1,
         reviewer: "teacher",
       });
+      await notifyReviewed();
       return ok({ mastery });
     }
 

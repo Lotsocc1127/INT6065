@@ -3,7 +3,8 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { AlertTriangle, Lock, Sparkles, Users } from "lucide-react";
+import { AlertTriangle, Download, Lock, Sparkles, Users } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +26,7 @@ import { RemedialDialog } from "@/components/app/remedial-dialog";
 import { hbarOption, heatmapOption, lineOption } from "@/lib/charts";
 import { TIER_META, type Tier } from "@/lib/mastery";
 import { formatStudent, pct } from "@/lib/utils";
+import { downloadXlsx } from "@/lib/download";
 import { DemoDataCard } from "@/components/app/demo-data-card";
 
 export const dynamic = "force-dynamic";
@@ -167,6 +169,25 @@ function DashboardInner() {
               ))}
             </SelectContent>
           </Select>
+        ) : null}
+        {data ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto gap-1.5"
+            onClick={async () => {
+              try {
+                const params = new URLSearchParams({ subject });
+                if (classId) params.set("classId", classId);
+                await downloadXlsx(`/api/export/dashboard?${params.toString()}`, "班级看板.xlsx");
+              } catch (e) {
+                toast.error(e instanceof Error ? e.message : "导出失败");
+              }
+            }}
+          >
+            <Download className="h-3.5 w-3.5" />
+            导出 Excel
+          </Button>
         ) : null}
       </div>
 

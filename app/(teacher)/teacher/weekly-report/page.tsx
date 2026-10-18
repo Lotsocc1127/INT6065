@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Copy, FileText, Loader2, TrendingDown, TrendingUp } from "lucide-react";
+import { AlertTriangle, Copy, Download, FileText, Loader2, TrendingDown, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ import { StatCard } from "@/components/app/stat-card";
 import { TierBadge, TierLegend } from "@/components/app/tier-badge";
 import { hbarOption, lineOption } from "@/lib/charts";
 import { TIER_META, type Tier } from "@/lib/mastery";
+import { downloadXlsx } from "@/lib/download";
 import { formatStudent, pct } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -222,6 +223,23 @@ export default function WeeklyReportPage() {
               <Button variant="outline" onClick={copy}>
                 <Copy className="mr-1.5 h-4 w-4" />
                 复制文字版
+              </Button>
+            )}
+            {stats && (
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  try {
+                    const params = new URLSearchParams({ subject });
+                    if (classId) params.set("classId", classId);
+                    await downloadXlsx(`/api/export/weekly-report?${params.toString()}`, "学情周报.xlsx");
+                  } catch (e) {
+                    toast.error(e instanceof Error ? e.message : "导出失败");
+                  }
+                }}
+              >
+                <Download className="mr-1.5 h-4 w-4" />
+                导出周报
               </Button>
             )}
           </div>

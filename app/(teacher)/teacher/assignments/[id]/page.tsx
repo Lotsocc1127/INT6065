@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, Circle, Copy, Loader2, RefreshCw, Sparkles, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Circle, Copy, Download, Loader2, MonitorPlay, RefreshCw, Sparkles, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +15,7 @@ import { ConfidenceBadge } from "@/components/app/confidence-badge";
 import { hbarOption } from "@/lib/charts";
 import { TIER_META, type Tier } from "@/lib/mastery";
 import { choiceAnswerText, fmtDate, fmtDateTime, fmtDuration, formatStudent, pct } from "@/lib/utils";
+import { downloadXlsx } from "@/lib/download";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -263,6 +264,29 @@ export default function AssignmentDetailPage({ params }: { params: { id: string 
           {data.assignment.subjectName} · {data.assignment.className} · 截止{" "}
           {fmtDate(data.assignment.dueAt)} · 已交 {data.submissions.length} 份
         </span>
+        <div className="ml-auto flex gap-1.5">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={async () => {
+              try {
+                await downloadXlsx(`/api/export/assignment/${id}`, "作业成绩单.xlsx");
+              } catch (e) {
+                toast.error(e instanceof Error ? e.message : "导出失败");
+              }
+            }}
+          >
+            <Download className="h-3.5 w-3.5" />
+            导出成绩单
+          </Button>
+          <Button asChild variant="outline" size="sm" className="gap-1.5">
+            <Link href={`/teacher/assignments/${id}/lecture`}>
+              <MonitorPlay className="h-3.5 w-3.5" />
+              课堂讲评
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {/* 学生作答与批改（分区展示） */}

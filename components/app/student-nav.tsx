@@ -15,6 +15,7 @@ import {
 import { BrandLogo } from "@/components/app/brand-logo";
 import { GovernanceModal } from "@/components/app/governance-modal";
 import { SettingsMenu } from "@/components/app/settings-menu";
+import { NotificationBell } from "@/components/app/notification-bell";
 import { UserNav } from "@/components/app/user-nav";
 import { cn } from "@/lib/utils";
 
@@ -45,6 +46,7 @@ export function StudentNav() {
           <div className="flex shrink-0 items-center gap-2">
             <GovernanceModal />
             <SettingsMenu />
+            <NotificationBell />
             <UserNav />
           </div>
         </div>

@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { AssignmentType, QuestionType } from "@prisma/client";
+import { AssignmentType, QuestionType, Role } from "@prisma/client";
 import { fail, ok } from "@/lib/api";
 import { requireApiUser } from "@/lib/auth";
 import { toArrStr } from "@/lib/json";
@@ -158,6 +158,20 @@ export async function POST(req: NextRequest) {
           })),
         },
       },
+    });
+    // 通知：新作业 → 该班全体学生（单条批量语句，Pooled 安全）
+    const students = await prisma.user.findMany({
+      where: { role: Role.STUDENT, classId },
+      select: { id: true },
+    });
+    await prisma.notification.createMany({
+      data: students.map((s) => ({
+        userId: s.id,
+        type: "assignment",
+        title: "新作业布置",
+        body: `「${title}」已布置，请按时完成`,
+        link: `/student/assignments/${assignment.id}`,
+      })),
     });
     return ok({ id: assignment.id }, 201);
   } catch (e) {

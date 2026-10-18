@@ -35,6 +35,19 @@ export async function PATCH(req: NextRequest, { params }: { params: { goalId: st
         appealResolvedBy: session.user.id,
       },
     });
+
+    // 通知：申诉处理结果 → 目标所属学生
+    await prisma.notification.create({
+      data: {
+        userId: goal.studentId,
+        type: "appeal_resolved",
+        title: "申诉已处理",
+        body: `你的目标「${goal.content.slice(0, 50)}」申诉已${
+          decision === "accept" ? "通过（视为达成）" : "驳回"
+        }${reply ? `：${reply.slice(0, 100)}` : ""}`,
+        link: "/student/goals",
+      },
+    });
     return ok({ ...goalDto(updated), decision });
   } catch (e) {
     return fail(e);

@@ -21,6 +21,10 @@ export interface RunCreated {
   assignmentIds: string[];
   goalIds: string[];
   shareLinkIds: string[];
+  /** 本轮开始时间：清理此后创建的通知（学生侧 + body 含 E2E 的教师侧通知） */
+  notificationBoundary?: Date;
+  /** 本轮涉及的学生（其通知按边界清扫） */
+  notificationUserIds?: string[];
 }
 
 /** 被删（或拟删）提交的最小信息：作答的 kp 快照与最终判分（复核改判后的最终值） */
@@ -297,6 +301,20 @@ export async function cleanupRun(prisma: PrismaClient, created: RunCreated): Pro
     const boundary = new Date(Math.min(...deletedSubs.map((s) => s.submittedAt.getTime())));
     await rebuildStudentStats(prisma, created.studentId, { boundary, deletedSubs });
   }
+  // 通知清扫：本轮涉及学生的通知按边界删；教师侧/其他学生的通知靠 body 里的 E2E 标题兜底
+  if (created.notificationBoundary) {
+    await prisma.notification.deleteMany({
+      where: {
+        createdAt: { gte: created.notificationBoundary },
+        OR: [
+          ...(created.notificationUserIds?.length
+            ? [{ userId: { in: created.notificationUserIds } }]
+            : []),
+          { body: { contains: "E2E" } },
+        ],
+      },
+    });
+  }
 }
 
 /** 一次性清理：按标记删除库中全部 e2e 目标/作业/分享链接，并恢复受影响学生的统计 */
@@ -340,5 +358,15 @@ export async function cleanupAllE2e(prisma: PrismaClient) {
   for (const sid of uniqueIds) {
     if (boundary) await rebuildStudentStats(prisma, sid, { boundary, deletedSubs });
   }
-  return { assignments: asgs.length, goals: goals.length, links: links.length, studentIds: uniqueIds, boundary };
+  const notifications = await prisma.notification.deleteMany({
+    where: { OR: [{ title: { contains: "E2E" } }, { body: { contains: "E2E" } }] },
+  });
+  return {
+    assignments: asgs.length,
+    goals: goals.length,
+    links: links.length,
+    studentIds: uniqueIds,
+    boundary,
+    notifications: notifications.count,
+  };
 }

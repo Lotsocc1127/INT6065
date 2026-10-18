@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api";
 import { requireApiUser } from "@/lib/auth";
 import { goalDto } from "@/lib/goals";
+import { findTeacherIds, notificationOps } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -38,6 +39,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           appealResolvedBy: null,
         },
       });
+      // 通知：新申诉 → 全体教师（申诉队列在教师端 /teacher/review）
+      const teacherIds = await findTeacherIds();
+      if (teacherIds.length) {
+        await notificationOps(teacherIds, {
+          type: "appeal_filed",
+          title: "新的目标申诉",
+          body: `「${session.user.name}」对目标「${goal.content.slice(0, 50)}」提出申诉`,
+          link: "/teacher/review",
+        });
+      }
       return ok(goalDto(updated));
     }
 

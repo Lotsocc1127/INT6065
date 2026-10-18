@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Eye, Plus } from "lucide-react";
+import { Eye, MonitorPlay, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -100,12 +100,20 @@ export default function TeacherAssignmentsPage() {
                   <TableCell className="text-right tabular-nums">{a.questionCount}</TableCell>
                   <TableCell className="text-right tabular-nums">{a.submissionCount}</TableCell>
                   <TableCell className="text-right">
-                    <Button asChild variant="outline" size="sm" className="gap-1.5">
-                      <Link href={`/teacher/assignments/${a.id}`}>
-                        <Eye className="h-3.5 w-3.5" />
-                        查看批改
-                      </Link>
-                    </Button>
+                    <div className="flex justify-end gap-1.5">
+                      <Button asChild variant="outline" size="sm" className="gap-1.5">
+                        <Link href={`/teacher/assignments/${a.id}/lecture`}>
+                          <MonitorPlay className="h-3.5 w-3.5" />
+                          讲评
+                        </Link>
+                      </Button>
+                      <Button asChild variant="outline" size="sm" className="gap-1.5">
+                        <Link href={`/teacher/assignments/${a.id}`}>
+                          <Eye className="h-3.5 w-3.5" />
+                          查看批改
+                        </Link>
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

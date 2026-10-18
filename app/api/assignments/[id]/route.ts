@@ -3,6 +3,7 @@ import { fail, ok } from "@/lib/api";
 import { requireApiUser } from "@/lib/auth";
 import { parseArr } from "@/lib/json";
 import { studentTierOf } from "@/lib/grading";
+import { loadTeacherSubmissions } from "@/lib/assignment-detail";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -58,38 +59,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
     let submissions: unknown[] | undefined;
     if (session.user.role !== "STUDENT") {
-      const subs = await prisma.submission.findMany({
-        where: { assignmentId: assignment.id },
-        include: { student: true, answers: true },
-        orderBy: { submittedAt: "asc" },
-      });
-      submissions = subs.map((s) => ({
-        id: s.id,
-        studentId: s.studentId,
-        studentName: s.student.name,
-        studentNo: s.student.studentNo,
-        submittedAt: s.submittedAt,
-        avgScore: (() => {
-          // 只统计已批改的题目；全部未批改时显示「待批改」
-          const scored = s.answers.filter((a) => a.score != null);
-          return scored.length
-            ? scored.reduce((acc, a) => acc + (a.score ?? 0), 0) / scored.length
-            : null;
-        })(),
-        answers: s.answers.map((a) => ({
-          id: a.id,
-          questionId: a.questionId,
-          response: a.response,
-          isCorrect: a.isCorrect,
-          score: a.score,
-          timeSpentMs: a.timeSpentMs,
-          errorTags: parseArr(a.errorTags),
-          errorAnalysis: a.errorAnalysis,
-          improvement: a.improvement,
-          confidence: a.confidence,
-          reviewStatus: a.reviewStatus,
-        })),
-      }));
+      submissions = await loadTeacherSubmissions(assignment.id);
     }
 
     return ok({

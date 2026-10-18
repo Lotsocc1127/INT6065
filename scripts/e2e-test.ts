@@ -4,6 +4,7 @@
  * 运行：npx tsx scripts/e2e-test.ts（需 dev server 已在 http://localhost:3000 运行）
  */
 import { PrismaClient } from "@prisma/client";
+import ExcelJS from "exceljs";
 import { llmConfigured } from "../lib/llm";
 import { cleanupRun, type RunCreated } from "./e2e-cleanup";
 
@@ -106,9 +107,19 @@ async function main() {
     orderBy: { name: "asc" },
   });
   const math = await prisma.subject.findUniqueOrThrow({ where: { code: "math" } });
+  const english = await prisma.subject.findUniqueOrThrow({ where: { code: "english" } });
+  const chinese = await prisma.subject.findUniqueOrThrow({ where: { code: "chinese" } });
   const cls = await prisma.class.findUniqueOrThrow({ where: { id: student.classId! } });
   const kps = await prisma.knowledgePoint.findMany({ where: { subjectId: math.id } });
-  createdState = { studentId: student.id, assignmentIds: [], goalIds: [], shareLinkIds: [] };
+  const runStart = new Date();
+  createdState = {
+    studentId: student.id,
+    assignmentIds: [],
+    goalIds: [],
+    shareLinkIds: [],
+    notificationBoundary: runStart,
+    notificationUserIds: [student.id],
+  };
 
   console.log(`\n== 1. 教师 ${teacher.name} 登录 ==`);
   const t = new Session();
@@ -117,9 +128,11 @@ async function main() {
   console.log("\n== 2. 教师布置作业 ==\n（题库选题）");
   const qRes = await t.fetch(`/api/questions?subject=math`);
   assert(qRes.ok, `题库接口 ${qRes.status}`);
-  const bank: { id: string; kpIds: string[]; stem: string; answer: string }[] = await qRes.json();
+  const bank: { id: string; kpIds: string[]; stem: string; answer: string; type: string }[] = await qRes.json();
   assert(bank.length >= 10, `题库题目数 >= 10（实际 ${bank.length}）`);
-  const picked = bank.slice(0, 4);
+  // 至少含一道选择题（讲评选项分布断言用；其余任选，题库前几题未必是选择题）
+  const firstChoice = bank.find((q) => q.type === "SINGLE_CHOICE") ?? bank[0];
+  const picked = [firstChoice, ...bank.filter((q) => q.id !== firstChoice.id).slice(0, 3)];
   const aRes = await t.fetch("/api/assignments", {
     method: "POST",
     body: JSON.stringify({
@@ -341,6 +354,14 @@ async function main() {
     assert(rg.status === 200, `AI 重批接口 ${rg.status}`);
     const rgj = await rg.json();
     assert(rgj.persisted === false, "无 Key 时 AI 重批不写库（persisted=false）");
+    // 通知：改判 → 学生收到 reviewed 通知
+    const noti13 = (await (await s.fetch("/api/notifications")).json()) as {
+      items: { type: string; link: string | null }[];
+    };
+    assert(
+      noti13.items.some((x) => x.type === "reviewed" && (x.link ?? "").includes(orAssignmentId)),
+      "改判后学生收到批改复核通知"
+    );
   } else {
     console.log("  （已配置 LLM Key，跳过无 Key 分支断言；解答题走 AI 批改路径）");
   }
@@ -641,6 +662,15 @@ async function main() {
   assert(ap1.status === 200 && ap1J.appealStatus === "PENDING", `不填理由也可申诉（${ap1.status}）`);
   assert(ap1J.challenged === true, "申诉后 challenged 派生为 true");
 
+  // 通知：申诉 → 教师收到 appeal_filed 通知
+  const notiFiled = (await (await t.fetch("/api/notifications")).json()) as {
+    items: { type: string; link: string | null }[];
+  };
+  assert(
+    notiFiled.items.some((x) => x.type === "appeal_filed" && x.link === "/teacher/review"),
+    "教师收到目标申诉通知"
+  );
+
   const lockRes = await s.fetch(`/api/goals/${goal1.id}`, {
     method: "PATCH",
     body: JSON.stringify({ done: true }),
@@ -713,6 +743,15 @@ async function main() {
   });
   const accJ = await acc.json();
   assert(acc.status === 200 && accJ.appealStatus === "ACCEPTED" && accJ.done === true, "采纳后 ACCEPTED 且目标已达成");
+
+  // 通知：申诉处理 → 学生收到 appeal_resolved 通知
+  const notiResolved = (await (await s.fetch("/api/notifications")).json()) as {
+    items: { type: string; link: string | null }[];
+  };
+  assert(
+    notiResolved.items.some((x) => x.type === "appeal_resolved" && x.link === "/student/goals"),
+    "学生收到申诉处理通知"
+  );
   assert(
     !((await (await t.fetch(`/api/teacher/appeals?classId=${cls.id}`)).json()).items as { id: string }[]).some(
       (x) => x.id === goal2.id
@@ -793,6 +832,387 @@ async function main() {
       await prisma.user.deleteMany({ where: { id: { in: createdIds } } });
     }
   }
+
+  console.log("\n== 21. 英语科目闭环（布置 → 提交 → 批改 → 掌握度 → 错题本 → 通知） ==");
+  const engBankRes = await t.fetch("/api/questions?subject=english");
+  assert(engBankRes.ok, `英语题库 ${engBankRes.status}`);
+  const engBank: { id: string; answer: string; type: string }[] = await engBankRes.json();
+  assert(engBank.length >= 10, `英语题库题目数 >= 10（实际 ${engBank.length}）`);
+  const engPicked = engBank.slice(0, 3);
+  const engA = await t.fetch("/api/assignments", {
+    method: "POST",
+    body: JSON.stringify({
+      title: "E2E 英语闭环作业",
+      type: "HOMEWORK",
+      subjectId: english.id,
+      classId: cls.id,
+      questionIds: engPicked.map((q) => q.id),
+    }),
+  });
+  assert(engA.status === 201, `布置英语作业 ${engA.status}`);
+  const engAssignmentId = (await engA.json()).id as string;
+  createdState!.assignmentIds.push(engAssignmentId);
+
+  // 通知：布置作业 → 学生收到 assignment 通知
+  const notiList = (await (await s.fetch("/api/notifications")).json()) as {
+    items: { id: string; type: string; link: string | null }[];
+  };
+  const notiA = notiList.items.find(
+    (x) => x.type === "assignment" && (x.link ?? "").endsWith(engAssignmentId)
+  );
+  assert(Boolean(notiA), "学生收到新作业通知");
+  const countBefore = Number(
+    ((await (await s.fetch("/api/notifications?countOnly=1")).json()) as { count: number }).count
+  );
+  assert(countBefore >= 1, `学生未读通知 >= 1（实际 ${countBefore}）`);
+  await s.fetch("/api/notifications/read", {
+    method: "POST",
+    body: JSON.stringify({ ids: [notiA!.id] }),
+  });
+  const countAfter = Number(
+    ((await (await s.fetch("/api/notifications?countOnly=1")).json()) as { count: number }).count
+  );
+  assert(countAfter === countBefore - 1, `标记已读后未读数 -1（${countBefore} → ${countAfter}）`);
+
+  const engDetail = await (await s.fetch(`/api/assignments/${engAssignmentId}`)).json();
+  const engSubmit = await s.fetch(`/api/assignments/${engAssignmentId}/submit`, {
+    method: "POST",
+    body: JSON.stringify({
+      answers: engDetail.questions.map((q: { id: string }, i: number) => ({
+        questionId: q.id,
+        response: i === 0 ? engPicked[0].answer : "错误答案",
+        timeSpentMs: 30000 + i * 5000,
+      })),
+    }),
+  });
+  assert(engSubmit.status === 201, `英语作业提交 ${engSubmit.status}`);
+  const engResult = await engSubmit.json();
+  assert(engResult.results.length === 3, "英语批改返回 3 条结果");
+  assert(engResult.results[0].isCorrect === true, "英语第 1 题判为正确");
+  assert(
+    engResult.results.slice(1).every((r: { isCorrect: boolean | null }) => r.isCorrect === false),
+    "英语其余题判为错误"
+  );
+  assert(Object.keys(engResult.mastery ?? {}).length > 0, "英语掌握度已更新");
+
+  // 通知：提交 → 教师收到 submission 通知
+  const tNoti = (await (await t.fetch("/api/notifications")).json()) as {
+    items: { type: string; link: string | null }[];
+  };
+  assert(
+    tNoti.items.some((x) => x.type === "submission" && (x.link ?? "").includes(engAssignmentId)),
+    "教师收到英语作业提交通知"
+  );
+
+  const engWq = (await (await s.fetch("/api/wrong-questions?subject=english")).json()) as {
+    questionId: string;
+  }[];
+  const engWrong = engPicked.slice(1).filter((q) => engWq.some((w) => w.questionId === q.id));
+  assert(engWrong.length === 2, `英语错题进入错题本（${engWrong.length}/2）`);
+
+  // 英语解答题 → 复核队列（种子 E8 有 2 道）
+  const engOr = (await (
+    await t.fetch("/api/questions?subject=english&type=OPEN_RESPONSE")
+  ).json()) as { id: string }[];
+  assert(engOr.length >= 2, `英语题库有解答题（${engOr.length} 道）`);
+  const engOrA = await t.fetch("/api/assignments", {
+    method: "POST",
+    body: JSON.stringify({
+      title: "E2E 英语复核队列作业",
+      type: "HOMEWORK",
+      subjectId: english.id,
+      classId: cls.id,
+      questionIds: [engOr[0].id],
+    }),
+  });
+  assert(engOrA.status === 201, `布置英语解答题作业 ${engOrA.status}`);
+  const engOrAssignmentId = (await engOrA.json()).id as string;
+  createdState!.assignmentIds.push(engOrAssignmentId);
+  const engOrSubmit = await s.fetch(`/api/assignments/${engOrAssignmentId}/submit`, {
+    method: "POST",
+    body: JSON.stringify({
+      answers: [{ questionId: engOr[0].id, response: "I like apple.", timeSpentMs: 50000 }],
+    }),
+  });
+  assert(engOrSubmit.status === 201, `英语解答题提交 ${engOrSubmit.status}`);
+  const engOrResult = (await engOrSubmit.json()) as {
+    results: { isCorrect: boolean | null; score: number | null; reviewStatus: string }[];
+  };
+  if (!llmConfigured()) {
+    assert(
+      engOrResult.results[0].isCorrect === null && engOrResult.results[0].reviewStatus === "needs_review",
+      "无 Key 时英语解答题待复核"
+    );
+    const engQ = (await (await t.fetch(`/api/review-queue?classId=${cls.id}`)).json()) as {
+      items: { assignmentTitle: string }[];
+    };
+    assert(
+      engQ.items.some((x) => x.assignmentTitle === "E2E 英语复核队列作业"),
+      "英语解答题进入复核队列"
+    );
+  } else {
+    assert(
+      typeof engOrResult.results[0].score === "number" &&
+        ["none", "needs_review"].includes(engOrResult.results[0].reviewStatus),
+      "有 Key 时英语解答题已 AI 批改"
+    );
+  }
+
+  console.log("\n== 22. 语文 QUIZ 提交与错因标签分学科 ==");
+  const chiBank = (await (await t.fetch("/api/questions?subject=chinese")).json()) as {
+    id: string;
+    answer: string;
+    type: string;
+  }[];
+  assert(chiBank.length >= 10, `语文题库题目数 >= 10（实际 ${chiBank.length}）`);
+  const chiChoice = chiBank.find((q) => q.type === "SINGLE_CHOICE");
+  const chiFill = chiBank.find((q) => q.type === "FILL_BLANK") ?? chiBank[1];
+  const chiOpen = chiBank.find((q) => q.type === "OPEN_RESPONSE");
+  assert(Boolean(chiChoice && chiFill && chiOpen), "语文题库含三种题型");
+  const chiIds = [chiChoice!, chiFill!, chiOpen!].map((q) => q.id);
+  const chiA = await t.fetch("/api/assignments", {
+    method: "POST",
+    body: JSON.stringify({
+      title: "E2E 语文小测",
+      type: "QUIZ",
+      subjectId: chinese.id,
+      classId: cls.id,
+      questionIds: chiIds,
+    }),
+  });
+  assert(chiA.status === 201, `布置语文 QUIZ ${chiA.status}`);
+  const chiAssignmentId = (await chiA.json()).id as string;
+  createdState!.assignmentIds.push(chiAssignmentId);
+  const chiList = (await (await s.fetch("/api/assignments?subject=chinese")).json()) as {
+    id: string;
+    type: string;
+  }[];
+  assert(chiList.find((a) => a.id === chiAssignmentId)?.type === "QUIZ", "语文作业列表显示 QUIZ 类型");
+  const chiDetail = await (await s.fetch(`/api/assignments/${chiAssignmentId}`)).json();
+  const chiSubmit = await s.fetch(`/api/assignments/${chiAssignmentId}/submit`, {
+    method: "POST",
+    body: JSON.stringify({
+      answers: chiDetail.questions.map((q: { id: string; type: string }) => ({
+        questionId: q.id,
+        response: q.type === "SINGLE_CHOICE" ? chiChoice!.answer : q.type === "FILL_BLANK" ? "错误答案" : "不知道",
+        timeSpentMs: 20000,
+      })),
+    }),
+  });
+  assert(chiSubmit.status === 201, `语文 QUIZ 提交 ${chiSubmit.status}`);
+  const chiResult = await chiSubmit.json();
+  const chiOpenResult = chiResult.results.find(
+    (r: { questionId: string }) => r.questionId === chiOpen!.id
+  ) as { errorTags: string[] };
+  const CHI_VOCAB = ["理解偏差", "要点遗漏", "表达不当", "审题不清", "其他"];
+  if (!llmConfigured()) {
+    assert(
+      Array.isArray(chiOpenResult.errorTags) && chiOpenResult.errorTags.length === 0,
+      "无 Key 时解答题错因标签为空"
+    );
+  } else {
+    assert(chiOpenResult.errorTags.length > 0, "有 Key 时解答题带错因标签");
+    assert(
+      chiOpenResult.errorTags.every((t) => CHI_VOCAB.includes(t)),
+      `错因标签属于语文词汇表（${chiOpenResult.errorTags.join("、")}）`
+    );
+  }
+  assert(Object.keys(chiResult.mastery ?? {}).length > 0, "语文掌握度已更新");
+  const chiWq = (await (await s.fetch("/api/wrong-questions?subject=chinese")).json()) as {
+    questionId: string;
+  }[];
+  assert(chiWq.some((w) => w.questionId === chiFill!.id), "语文错题进入错题本");
+
+  console.log("\n== 23. AI 出题生成与布置 ==");
+  const hwRes = await t.fetch("/api/ai/homework", {
+    method: "POST",
+    body: JSON.stringify({ subjectCode: "math", tier: "foundation", count: 2 }),
+  });
+  const hwJ = await hwRes.json();
+  let aiAssignmentId: string | null = null;
+  if (!llmConfigured()) {
+    assert(hwRes.status === 502, `无 Key 时 AI 出题返回 502（实际 ${hwRes.status}）`);
+    assert(String(hwJ.error ?? "").includes("未配置"), "错误信息提示未配置 Key");
+  } else {
+    assert(hwRes.status === 200, `AI 出题 ${hwRes.status}`);
+    const hwQuestions: { stem: string; answer: string; type: string; options?: string[] | null }[] =
+      hwJ.questions ?? [];
+    assert(hwQuestions.length >= 1, `AI 出题返回 ${hwQuestions.length} 道`);
+    assert(
+      hwQuestions.every(
+        (q) =>
+          q.stem && q.answer && ["SINGLE_CHOICE", "FILL_BLANK", "OPEN_RESPONSE"].includes(q.type)
+      ),
+      "题目含 stem/answer 且类型合法"
+    );
+    const aiA = await t.fetch("/api/assignments", {
+      method: "POST",
+      body: JSON.stringify({
+        title: "E2E AI 出题作业",
+        type: "HOMEWORK",
+        subjectId: math.id,
+        classId: cls.id,
+        questions: hwQuestions,
+      }),
+    });
+    assert(aiA.status === 201, `AI 题目建作业 ${aiA.status}`);
+    aiAssignmentId = (await aiA.json()).id as string;
+    createdState!.assignmentIds.push(aiAssignmentId);
+    const aiDetail = await (await s.fetch(`/api/assignments/${aiAssignmentId}`)).json();
+    const aiSubmit = await s.fetch(`/api/assignments/${aiAssignmentId}/submit`, {
+      method: "POST",
+      body: JSON.stringify({
+        answers: aiDetail.questions.map((q: { id: string }, i: number) => ({
+          questionId: q.id,
+          response: hwQuestions[i].answer,
+          timeSpentMs: 40000,
+        })),
+      }),
+    });
+    assert(aiSubmit.status === 201, `AI 出题作业提交 ${aiSubmit.status}`);
+  }
+
+  console.log("\n== 24. 其余 AI 接口与掌握度接口冒烟 ==");
+  // 备课助手
+  const prepRes = await t.fetch("/api/ai/prep", {
+    method: "POST",
+    body: JSON.stringify({ subjectCode: "math", classId: cls.id, lessons: 1 }),
+  });
+  const prepJ = await prepRes.json();
+  if (!llmConfigured()) {
+    assert(prepRes.status === 502 && String(prepJ.error ?? "").includes("未配置"), `备课无 Key 502（实际 ${prepRes.status}）`);
+  } else {
+    assert(prepRes.status === 200 && Array.isArray(prepJ.prep?.flow) && prepJ.prep.flow.length >= 1, "备课返回教学流程");
+  }
+  // 苏格拉底辅导（学生端）
+  const socRes = await s.fetch("/api/ai/socrates", {
+    method: "POST",
+    body: JSON.stringify({ messages: [{ role: "user", content: "什么是负数？" }] }),
+  });
+  const socJ = await socRes.json();
+  if (!llmConfigured()) {
+    assert(socRes.status === 502, `苏格拉底无 Key 502（实际 ${socRes.status}）`);
+  } else {
+    assert(socRes.status === 200 && typeof socJ.reply === "string" && socJ.reply.length > 0, "苏格拉底返回回复");
+  }
+  // 举一反三（要求是自己的错题：用组 2 的第 2 题，已入错题本）
+  const simRes = await s.fetch("/api/ai/similar", {
+    method: "POST",
+    body: JSON.stringify({ questionId: picked[1].id }),
+  });
+  const simJ = await simRes.json();
+  if (!llmConfigured()) {
+    assert(simRes.status === 502, `举一反三无 Key 502（实际 ${simRes.status}）`);
+  } else {
+    assert(simRes.status === 200 && Array.isArray(simJ.questions) && simJ.questions.length === 3, "举一反三返回 3 道题");
+  }
+  // 单次作业个性化分析（组 8 的提交）
+  const subAnalysis = await t.fetch("/api/ai/submission-analysis", {
+    method: "POST",
+    body: JSON.stringify({ submissionId: afterDetail.mySubmission.id }),
+  });
+  const subJ = await subAnalysis.json();
+  if (!llmConfigured()) {
+    assert(subAnalysis.status === 502, `个性化分析无 Key 502（实际 ${subAnalysis.status}）`);
+  } else {
+    assert(
+      subAnalysis.status === 200 && typeof subJ.analysis?.summary === "string" && subJ.analysis.summary.length > 0,
+      "个性化分析返回 summary"
+    );
+  }
+  // 掌握度接口：学生可读自己的、教师按 studentId 读、学生不可读他人的
+  const myMastery = await s.fetch("/api/mastery?subject=math");
+  const myMasteryJ = await myMastery.json();
+  assert(
+    myMastery.status === 200 && Array.isArray(myMasteryJ) && myMasteryJ.every((m: { history?: unknown[] }) => Array.isArray(m.history)),
+    "学生掌握度接口返回含历史数组"
+  );
+  const otherMastery = await s.fetch(`/api/mastery?subject=math&studentId=${teacher.id}`);
+  assert(otherMastery.status === 403, `学生读他人掌握度被拒 ${otherMastery.status}`);
+  const tMastery = await t.fetch(`/api/mastery?subject=math&studentId=${student.id}`);
+  assert(tMastery.status === 200, `教师按 studentId 读掌握度 ${tMastery.status}`);
+
+  console.log("\n== 25. 课堂讲评与 Excel 导出 ==");
+  // 讲评数据（组 2 的 4 道选择题：1 对 3 错）
+  const lecRes = await t.fetch(`/api/assignments/${assignmentId}/lecture`);
+  assert(lecRes.status === 200, `讲评接口 ${lecRes.status}`);
+  const lec = await lecRes.json();
+  assert(lec.questions.length === 4, `讲评返回 4 题（实际 ${lec.questions.length}）`);
+  const lecFirst = lec.questions[0] as {
+    stats: {
+      total: number;
+      wrong: number;
+      scoreRate: number | null;
+      optionDist: { option: string; count: number }[] | null;
+      wrongSamples: { studentNo: string | null }[];
+    };
+  };
+  assert(lecFirst.stats.total === 1, "讲评统计作答数为 1");
+  assert(lecFirst.stats.wrong === 1, "讲评排序首题错误数为 1（错误率降序）");
+  assert(
+    lecFirst.stats.wrongSamples.length === 1 && typeof lecFirst.stats.wrongSamples[0].studentNo === "string",
+    "典型错误作答含学号"
+  );
+  // 选择题选项分布（题库前 4 题未必全为选择题，找一道选择题验证）
+  const lecChoice = lec.questions.find((q: { type: string }) => q.type === "SINGLE_CHOICE") as
+    | { stats: { optionDist: { option: string; count: number }[] | null } }
+    | undefined;
+  assert(Boolean(lecChoice), "讲评数据含选择题");
+  const od = lecChoice!.stats.optionDist;
+  assert(Array.isArray(od) && od.length === 4, "选择题选项分布含 4 个选项");
+  assert(od!.reduce((a, o) => a + o.count, 0) === 1, "选项分布人数合计等于作答数");
+  // 脱敏：典型错误作答只含学号、不含姓名字段
+  assert(
+    lec.questions.every(
+      (q: { stats: { wrongSamples: Record<string, unknown>[] } }) =>
+        q.stats.wrongSamples.every((w) => !("name" in w) && "studentNo" in w)
+    ),
+    "典型错误作答不含姓名字段（脱敏）"
+  );
+  // AI 讲评要点：恒 200（无 Key 模板兜底）
+  const aiLecRes = await t.fetch("/api/ai/lecture", {
+    method: "POST",
+    body: JSON.stringify({ assignmentId }),
+  });
+  const aiLecJ = await aiLecRes.json();
+  assert(aiLecRes.status === 200 && aiLecJ.items.length === 4, `AI 讲评要点返回 4 条（${aiLecJ.items?.length ?? 0}）`);
+  assert(
+    aiLecJ.items.every(
+      (i: { angle?: string; pitfalls?: string[]; variant?: string }) =>
+        i.angle && Array.isArray(i.pitfalls) && i.variant
+    ),
+    "每条讲评要点含 angle/pitfalls/variant"
+  );
+  if (!llmConfigured()) {
+    assert(aiLecJ.aiGenerated === false, "无 Key 时 aiGenerated=false（模板兜底）");
+  }
+  const sLec = await s.fetch(`/api/assignments/${assignmentId}/lecture`);
+  assert(sLec.status === 403, `学生访问讲评被拒 ${sLec.status}`);
+
+  // Excel 导出（exceljs 回读校验 sheet 与表头）
+  const checkXlsx = async (url: string, sheetName: string, headerCell: string) => {
+    const r = await t.fetch(url);
+    assert(r.status === 200, `导出 ${url} ${r.status}`);
+    const ct = r.headers.get("content-type") ?? "";
+    assert(ct.includes("spreadsheetml"), `导出 Content-Type 为 xlsx（${ct}）`);
+    const cd = r.headers.get("content-disposition") ?? "";
+    assert(cd.includes("attachment"), "导出带 Content-Disposition attachment");
+    const buf = Buffer.from(await r.arrayBuffer());
+    assert(buf.byteLength > 500, `导出文件非空（${buf.byteLength} 字节）`);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buf as unknown as ExcelJS.Buffer);
+    const ws = wb.getWorksheet(sheetName);
+    assert(Boolean(ws), `导出包含 sheet「${sheetName}」`);
+    assert(
+      String(ws!.getRow(1).getCell(1).value ?? "").includes(headerCell),
+      `表头含「${headerCell}」`
+    );
+  };
+  await checkXlsx(`/api/export/dashboard?subject=math&classId=${cls.id}`, "掌握度矩阵", "学号");
+  await checkXlsx(`/api/export/assignment/${assignmentId}`, "成绩单", "学号");
+  await checkXlsx(`/api/export/weekly-report?subject=math&classId=${cls.id}`, "对比数据", "指标");
+  const sExport = await s.fetch(`/api/export/dashboard?subject=math&classId=${cls.id}`);
+  assert(sExport.status === 403, `学生访问导出被拒 ${sExport.status}`);
 
   // 自清理：删除本轮创建的作业/目标/分享链接，并按剩余提交恢复该生掌握度与错题本
   // （失败路径同样清理，见 main().catch；两处都容错——清理失败不影响断言结果，只提示残留风险）

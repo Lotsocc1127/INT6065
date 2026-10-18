@@ -330,3 +330,63 @@ ${tierLines}
 
 请基于以上数据撰写周报（总结 + 行动建议）。`;
 }
+
+/** 7.11 AI 课堂讲评要点（教师讲评页） */
+export const LECTURE_SYSTEM = `你是资深初中教研员。基于全班逐题作答统计，为每道题生成课堂讲评要点。
+要求：
+- 切入角度（angle）：一句话，从本班实际错误出发，指出讲评这道题的切入点。
+- 易错点（pitfalls）：2-4 条，结合本题统计（得分率、高频错因、典型错误作答）指出学生最可能出错的地方。
+- 变式提问（variant）：1 条课堂追问，检验学生是否真正理解。
+- 不虚构统计之外的数据；不点名、不描述具体学生。
+${JSON_ONLY}
+输出 JSON 结构：
+{ "items": [ { "questionId": string, "angle": string, "pitfalls": string[], "variant": string } ] }
+其中 items 顺序与输入题目顺序一致，数量相同。`;
+
+export function lectureContext(opts: {
+  subjectName: string;
+  title: string;
+  questions: {
+    questionId: string;
+    order: number;
+    type: string;
+    stem: string;
+    options: string[];
+    answer: string;
+    analysis: string | null;
+    kpCodes: string[];
+    stats: {
+      total: number;
+      correct: number;
+      wrong: number;
+      pending: number;
+      scoreRate: number | null;
+      avgTimeMs: number | null;
+      errorTags: { tag: string; count: number }[];
+      wrongSamples: { studentNo: string | null; response: string; score: number | null }[];
+    };
+  }[];
+}): string {
+  const lines = opts.questions.map((q) => {
+    const s = q.stats;
+    const tags = s.errorTags.map((t) => `${t.tag} ${t.count} 次`).join("、") || "无";
+    const samples =
+      s.wrongSamples.length > 0
+        ? s.wrongSamples
+            .map((w) => `学号 ${w.studentNo ?? "—"} 作答「${w.response}」（${w.score == null ? "待批改" : `${Math.round(w.score * 100)}%`}）`)
+            .join("；")
+        : "无";
+    return `第 ${q.order} 题（${q.type}${q.kpCodes.length ? `，知识点 ${q.kpCodes.join("、")}` : ""}）
+题干：${q.stem}
+${q.options.length ? `选项：${q.options.map((o, i) => `${String.fromCharCode(65 + i)}. ${o}`).join("；")}` : ""}
+标准答案：${q.answer}${q.analysis ? `\n解析：${q.analysis}` : ""}
+全班作答 ${s.total} 人：正确 ${s.correct}、错误 ${s.wrong}、待批改 ${s.pending}；得分率 ${s.scoreRate == null ? "待批改" : `${Math.round(s.scoreRate * 100)}%`}${s.avgTimeMs == null ? "" : `；平均用时 ${Math.round(s.avgTimeMs / 1000)} 秒`}
+高频错因：${tags}
+典型错误作答：${samples}`;
+  });
+  return `科目：${opts.subjectName}
+作业：${opts.title}
+请为以下每道题生成课堂讲评要点：
+
+${lines.join("\n\n")}`;
+}

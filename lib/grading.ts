@@ -4,7 +4,7 @@
  * → 3. 按知识点聚合正确率更新掌握度（写 MasteryPoint）
  * → 4. 错题写入/更新错题本 → 5. 返回批改结果 + 最新掌握度
  */
-import { Prisma, type Question } from "@prisma/client";
+import { Prisma, Role, type Question } from "@prisma/client";
 import { prisma } from "./prisma";
 import { parseArr, toArrStr, clamp } from "./json";
 import { resolveChoiceLetter } from "./utils";
@@ -12,6 +12,7 @@ import { avg, updateMastery, type Tier } from "./mastery";
 import { effectiveTierOf } from "./tier";
 import { llmConfigured, llmJson } from "./llm";
 import { gradeSystem, normalizeErrorTags } from "./prompts";
+import { notificationOps } from "./notifications";
 
 /** 学生某科有效层级：教师锁定（tierOverride）优先，否则该科掌握度平均 → tierOf（无数据视为基础层） */
 export async function studentTierOf(studentId: string, subjectId: string): Promise<Tier> {
@@ -238,10 +239,13 @@ export async function processSubmission(opts: {
   const wrongIds = graded
     .filter((g) => g.isCorrect === false || (g.score != null && g.score < 0.6))
     .map((g) => g.questionId);
-  const [prevRows, kpRows, wqRows] = await Promise.all([
+  const [prevRows, kpRows, wqRows, teacherRows, studentRow] = await Promise.all([
     prisma.mastery.findMany({ where: { studentId: opts.studentId, kpId: { in: kpIds } } }),
     prisma.knowledgePoint.findMany({ where: { id: { in: kpIds } } }),
     prisma.wrongQuestion.findMany({ where: { studentId: opts.studentId, questionId: { in: wrongIds } } }),
+    // 通知预读：全体教师 + 提交学生姓名（事务外预读，Pooled 约束）
+    prisma.user.findMany({ where: { role: Role.TEACHER }, select: { id: true } }),
+    prisma.user.findUnique({ where: { id: opts.studentId }, select: { name: true } }),
   ]);
   const prevMap = new Map(prevRows.map((r) => [r.kpId, r.value]));
   const kpMap = new Map(kpRows.map((k) => [k.id, k]));
@@ -322,6 +326,21 @@ export async function processSubmission(opts: {
         })
       );
     }
+  }
+
+  // 通知：新提交 → 全体教师（MVP 无教师-班级绑定，暂全员广播）
+  if (teacherRows.length) {
+    ops.push(
+      notificationOps(
+        teacherRows.map((t) => t.id),
+        {
+          type: "submission",
+          title: "收到新提交",
+          body: `「${assignment.title}」收到 ${studentRow?.name ?? "学生"} 的新提交`,
+          link: `/teacher/assignments/${assignment.id}`,
+        }
+      )
+    );
   }
 
   await prisma.$transaction(ops);

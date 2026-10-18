@@ -43,6 +43,11 @@ async function main() {
     select: { id: true, createdAt: true, revoked: true },
     orderBy: { createdAt: "asc" },
   });
+  const notifications = await prisma.notification.findMany({
+    where: { OR: [{ title: { contains: "E2E" } }, { body: { contains: "E2E" } }] },
+    select: { id: true, title: true, createdAt: true },
+    orderBy: { createdAt: "asc" },
+  });
 
   console.log(`${APPLY ? "▶ 执行清理" : "▶ 预览（只读，未写库）"}；边界时间 = ${boundary?.toISOString() ?? "无提交"}\n`);
   console.log(`将删除 e2e 目标 ${goals.length} 条：`);
@@ -51,6 +56,8 @@ async function main() {
   for (const a of asgs) console.log(`  - ${a.title} @ ${a.createdAt.toISOString()}`);
   console.log(`\n将删除受影响学生的分享链接 ${links.length} 条：`);
   for (const l of links) console.log(`  - ${l.createdAt.toISOString()} revoked=${l.revoked}`);
+  console.log(`\n将删除 e2e 通知 ${notifications.length} 条：`);
+  for (const n of notifications) console.log(`  - ${n.title} @ ${n.createdAt.toISOString()}`);
 
   if (boundary) {
     for (const sid of studentIds) {
@@ -91,7 +98,7 @@ async function main() {
     console.log("\n写库中…");
     const res = await cleanupAllE2e(prisma);
     console.log(
-      `\n✅ 已清理：目标 ${res.goals} 条、作业 ${res.assignments} 条、分享链接 ${res.links} 条；恢复学生 ${res.studentIds.length} 名`
+      `\n✅ 已清理：目标 ${res.goals} 条、作业 ${res.assignments} 条、分享链接 ${res.links} 条、通知 ${res.notifications} 条；恢复学生 ${res.studentIds.length} 名`
     );
   } else {
     console.log("\n（预览模式——确认无误后加 --apply 执行）");
