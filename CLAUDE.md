@@ -63,6 +63,19 @@
   防 LLM 不遵守词汇表）；**别再用固定的数学标签池批改其他学科**
   （修复前语文存量数据仍带数学标签，见 `scripts/fix-subject-error-tags.ts`）
 
+## 讲评 / 通知 / 导出（第四批 P0）
+
+- 课堂讲评：`lib/lecture.ts` 的 `buildLectureData` 全班逐题聚合（典型错误
+  作答**脱敏只带学号**）；`/api/ai/lecture` 无 Key 走模板兜底（`aiGenerated:
+  false` 恒 200，同周报模式）；LlmTask 已加 `"lecture"`（`LLM_CHAIN_LECTURE` 可用）
+- 通知中心：`Notification` 表 + 5 个埋点（布置→学生 / 提交→教师 / 复核→该生
+  （演示数据跳过）/ 申诉→教师 / 申诉处理→该生）；**教师侧事件（提交/申诉）
+  广播全体 TEACHER**——MVP 无教师-班级绑定、Assignment 无 createdBy，
+  未来可细化为布置人定向；e2e 清理链含通知清扫（边界 + body 含 "E2E"）
+- Excel 导出：exceljs **仅服务端**（`lib/export.ts`；client 下载走
+  `lib/download.ts`，两者互不 import）；看板聚合已抽到 `lib/dashboard.ts`、
+  作业详情教师分支抽到 `lib/assignment-detail.ts`（路由薄壳，响应形状不变）
+
 ## 演示数据（教师端）
 
 - 一键演示已从管理端移到**教师端看板**（components/app/demo-data-card.tsx），
