@@ -47,6 +47,12 @@ model User {
   class     Class?  @relation(fields: [classId], references: [id])
   studentNo String? @unique // 学号（仅 STUDENT；两位零填充全局递增，解决同班重名区分）
   tierOverride String? // "foundation"|"intermediate"|"advanced"：教师手动锁定分层；null = 自动计算
+  // 班主任绑定（仅 TEACHER；@unique 同时保证一班一班主任、一师一班）
+  headTeacherClassId String? @unique
+  headTeacherClass   Class?  @relation("HeadTeacher", fields: [headTeacherClassId], references: [id], onDelete: SetNull)
+  // 科目教师绑定（仅 TEACHER）
+  subjectId String?
+  subject   Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
   answers       AnswerRecord[]
   masteries     Mastery[]
   goals         LearningGoal[]
@@ -56,10 +62,11 @@ model User {
 }
 
 model Class {
-  id          String @id @default(cuid())
-  name        String // 例如 "七年级(3)班"
-  students    User[]
-  assignments Assignment[]
+  id           String @id @default(cuid())
+  name         String // 例如 "七年级(3)班"
+  students     User[]
+  headTeacher  User?  @relation("HeadTeacher") // 本班班主任（见 User.headTeacherClassId）
+  assignments  Assignment[]
 }
 
 model Subject {
@@ -69,6 +76,7 @@ model Subject {
   knowledgePoints KnowledgePoint[]
   questions       Question[]
   assignments     Assignment[]
+  teachers        User[] // 绑定本学科的科目教师
 }
 
 model KnowledgePoint {
@@ -230,7 +238,8 @@ model ShareLink {
 model Notification {
   id        String    @id @default(cuid())
   userId    String
-  user      User      @relation(fields: [userId], references: [id])
+  // onDelete: Cascade——删除用户（如管理员删除教师）时其通知随行清除，避免 FK RESTRICT 卡死删除
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   // assignment=新作业(学生) | submission=新提交(教师) | reviewed=复核完成(学生)
   // appeal_filed=目标申诉(教师) | appeal_resolved=申诉处理(学生)
   type      String

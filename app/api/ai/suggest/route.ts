@@ -4,22 +4,29 @@ import { requireApiUser } from "@/lib/auth";
 import { llmJson } from "@/lib/llm";
 import { suggestPrompt } from "@/lib/prompts";
 import { prisma } from "@/lib/prisma";
+import {
+  assertTeacherCanAccessStudent,
+  resolveSubjectCode,
+} from "@/lib/teacher-scope";
 
 export const dynamic = "force-dynamic";
 
-/** POST /api/ai/suggest —— AI 培养建议（7.4）：{studentId, subjectCode} */
+/** POST /api/ai/suggest —— AI 培养建议（7.4）：{studentId, subjectCode}
+ * 班主任限本班学生；科目教师强制本学科（越界 403） */
 export async function POST(req: NextRequest) {
   try {
-    await requireApiUser(["TEACHER", "ADMIN"]);
+    const session = await requireApiUser(["TEACHER", "ADMIN"]);
     const body = await req.json();
     const studentId = String(body?.studentId ?? "");
-    const subjectCode = String(body?.subjectCode ?? "math");
+    const subjectCode =
+      resolveSubjectCode(session.user, body?.subjectCode ? String(body.subjectCode) : undefined) ?? "math";
 
     const [student, subject] = await Promise.all([
       prisma.user.findUnique({ where: { id: studentId } }),
       prisma.subject.findUnique({ where: { code: subjectCode } }),
     ]);
     if (!student || !subject) return ok({ error: "学生或科目不存在" }, 404);
+    assertTeacherCanAccessStudent(session.user, student);
 
     const masteries = await prisma.mastery.findMany({
       where: { studentId, subjectId: subject.id },

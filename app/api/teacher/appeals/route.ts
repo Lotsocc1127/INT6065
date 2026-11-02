@@ -2,22 +2,24 @@ import { NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api";
 import { requireApiUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { assertNotSubjectTeacher, resolveClassId } from "@/lib/teacher-scope";
 
 export const dynamic = "force-dynamic";
 
 /**
  * GET /api/teacher/appeals —— 学习目标待复核申诉队列
  *
- * ?classId= 仅作 UI 筛选；本应用没有教师↔班级绑定，故不做权限范围校验
- * （与 /api/review-queue 一致，所有教师可见全部班级）。
+ * 班主任仅本班（resolveClassId 强制，显式越界 403）；科目教师 403（目标无学科归属）；
+ * 未绑定教师/管理员可 ?classId= 筛选（缺省全部）。
  * 不提供 subject 筛选：LearningGoal.kpId 可空且无外键，按科目过滤会静默隐藏
  * 全部自由文本目标（含 seed 造的全部目标）。
  */
 export async function GET(req: NextRequest) {
   try {
-    await requireApiUser(["TEACHER", "ADMIN"]);
+    const session = await requireApiUser(["TEACHER", "ADMIN"]);
+    assertNotSubjectTeacher(session.user, "科目教师无权查看目标申诉");
     const sp = req.nextUrl.searchParams;
-    const classId = sp.get("classId") || undefined;
+    const classId = resolveClassId(session.user, sp.get("classId"));
     const countOnly = sp.get("countOnly") === "1";
 
     const where = {

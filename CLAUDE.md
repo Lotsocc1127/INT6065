@@ -63,15 +63,37 @@
   防 LLM 不遵守词汇表）；**别再用固定的数学标签池批改其他学科**
   （修复前语文存量数据仍带数学标签，见 `scripts/fix-subject-error-tags.ts`）
 
+## 教师绑定与权限（班主任 / 科目教师）
+
+- `User.headTeacherClassId @unique`（班主任→班级，onDelete SetNull）与
+  `User.subjectId`（科目教师→Subject）；绑定在登录时进 JWT session
+  （`headTeacherClassId`/`subjectId`/`subjectCode`），**管理员改绑定后
+  该教师下次登录生效**
+- 权限唯一权威是 `lib/teacher-scope.ts`：`getTeacherScope`（ADMIN/未绑定
+  → null=全量）、`resolveClassId`/`resolveSubjectCode`（越界抛 403）、
+  `assertTeacherCanAccessAssignment/Student`、`assertTeacherCanManageStudents`
+  （科目教师 403）、`assertNotSubjectTeacher`（申诉类 403）、
+  `classListWhere`/`subjectListWhere`（列表过滤）、`resolveBindingInput`
+  （管理员设置绑定，互斥校验）。**规则：班主任只看本班全科目、可管本班学生；
+  科目教师只看本学科全年级、学生管理只读；未绑定/ADMIN 全量**
+- `/api/classes`、`/api/subjects` 按范围过滤 → 前端 Select 缺省自然被限；
+  服务器 403 兜底，客户端只做防死端 UI（review 页科目教师隐藏申诉区等）
+- 共享库回填：`npx tsx --env-file=.env scripts/backfill-teacher-bindings.ts`
+  （幂等，只填 null 不覆盖；建孙/周/吴科目教师）；新库走 seed 自带绑定
+- e2e 会临时清选中教师的 subjectId 并在成功/失败双路径恢复；班主任分支
+  学生改选其本班（零 DB 变更）
+
 ## 讲评 / 通知 / 导出（第四批 P0）
 
 - 课堂讲评：`lib/lecture.ts` 的 `buildLectureData` 全班逐题聚合（典型错误
   作答**脱敏只带学号**）；`/api/ai/lecture` 无 Key 走模板兜底（`aiGenerated:
-  false` 恒 200，同周报模式）；LlmTask 已加 `"lecture"`（`LLM_CHAIN_LECTURE` 可用）
+  false` 恒 200，同周报模式）；LlmTask 已加 `"lecture"`（`LLM_CHAIN_LECTURE` 可用）；
+  lectureContext 必须带出题目 id，且仅当有 item 真正匹配题目才置 aiGenerated
 - 通知中心：`Notification` 表 + 5 个埋点（布置→学生 / 提交→教师 / 复核→该生
-  （演示数据跳过）/ 申诉→教师 / 申诉处理→该生）；**教师侧事件（提交/申诉）
-  广播全体 TEACHER**——MVP 无教师-班级绑定、Assignment 无 createdBy，
-  未来可细化为布置人定向；e2e 清理链含通知清扫（边界 + body 含 "E2E"）
+  （演示数据跳过）/ 申诉→教师 / 申诉处理→该生）；**教师侧事件按绑定定向**
+  （`findTeacherIdsFor`：事件班级班主任 ∪ 事件科目科目教师 ∪ 未绑定教师），
+  不再全员广播；通知写是提交后的 best-effort（不在批改事务内）；正文一律
+  `formatStudent(name, studentNo)`；e2e 清理链含通知清扫（边界 + body 含 "E2E"）
 - Excel 导出：exceljs **仅服务端**（`lib/export.ts`；client 下载走
   `lib/download.ts`，两者互不 import）；看板聚合已抽到 `lib/dashboard.ts`、
   作业详情教师分支抽到 `lib/assignment-detail.ts`（路由薄壳，响应形状不变）

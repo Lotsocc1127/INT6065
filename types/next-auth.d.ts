@@ -7,11 +7,17 @@ declare module "next-auth" {
       id: string;
       role: Role;
       classId: string | null;
+      headTeacherClassId: string | null;
+      subjectId: string | null;
+      subjectCode: string | null;
     } & DefaultSession["user"];
   }
   interface User {
     role?: Role;
     classId?: string | null;
+    headTeacherClassId?: string | null;
+    subjectId?: string | null;
+    subjectCode?: string | null;
   }
 }
 
@@ -20,5 +26,8 @@ declare module "next-auth/jwt" {
     id?: string;
     role?: Role;
     classId?: string | null;
+    headTeacherClassId?: string | null;
+    subjectId?: string | null;
+    subjectCode?: string | null;
   }
 }

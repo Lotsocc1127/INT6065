@@ -5,22 +5,26 @@ import { llmConfigured, llmJson } from "@/lib/llm";
 import { WEEKLY_REPORT_SYSTEM, weeklyReportContext } from "@/lib/prompts";
 import { prisma } from "@/lib/prisma";
 import { aggregateWeeklyReport, buildReportFallback } from "@/lib/weekly-report";
+import { classListWhere, resolveClassId, resolveSubjectCode } from "@/lib/teacher-scope";
 
 export const dynamic = "force-dynamic";
 
-/** POST /api/ai/weekly-report —— 班级学情周报（近7天 vs 前7天；无 Key/LLM 失败时模板兜底，不返回 502） */
+/** POST /api/ai/weekly-report —— 班级学情周报（近7天 vs 前7天；无 Key/LLM 失败时模板兜底，不返回 502）
+ * 班主任限本班、科目教师限本学科（resolve 助手强制） */
 export async function POST(req: NextRequest) {
   try {
-    await requireApiUser(["TEACHER", "ADMIN"]);
+    const session = await requireApiUser(["TEACHER", "ADMIN"]);
     const body = await req.json().catch(() => ({}));
-    const subjectCode = String(body?.subjectCode ?? "math");
+    const subjectCode = resolveSubjectCode(session.user, body?.subjectCode) ?? "math";
     const subject = await prisma.subject.findUnique({ where: { code: subjectCode } });
     if (!subject) return ok({ error: "科目不存在" }, 404);
 
-    const classes = await prisma.class.findMany({ orderBy: { name: "asc" } });
-    const cls = body?.classId
-      ? classes.find((c: { id: string }) => c.id === body.classId)
-      : classes[0];
+    const classes = await prisma.class.findMany({
+      where: classListWhere(session.user),
+      orderBy: { name: "asc" },
+    });
+    const classId = resolveClassId(session.user, body?.classId);
+    const cls = classId ? classes.find((c) => c.id === classId) : classes[0];
     if (!cls) return ok({ error: "没有班级数据" }, 404);
 
     const stats = await aggregateWeeklyReport({

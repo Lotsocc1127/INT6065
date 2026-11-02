@@ -16,7 +16,10 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials) {
         if (!credentials?.userId || !credentials?.password) return null;
-        const user = await prisma.user.findUnique({ where: { id: credentials.userId } });
+        const user = await prisma.user.findUnique({
+          where: { id: credentials.userId },
+          include: { subject: { select: { code: true } } }, // 科目教师：code 一并进 JWT 供范围解析
+        });
         if (!user) return null;
         // bcrypt 哈希校验（bcryptjs 为纯 JS 实现，兼容 Vercel 等 serverless 环境）
         const okHash = user.password.startsWith("$2")
@@ -25,7 +28,15 @@ export const authOptions: NextAuthOptions = {
         // 兼容旧种子明文密码（仅开发期遗留；生产请确保全部为哈希）
         const okLegacy = !user.password.startsWith("$2") && user.password === credentials.password;
         if (!okHash && !okLegacy) return null;
-        return { id: user.id, name: user.name, role: user.role, classId: user.classId };
+        return {
+          id: user.id,
+          name: user.name,
+          role: user.role,
+          classId: user.classId,
+          headTeacherClassId: user.headTeacherClassId,
+          subjectId: user.subjectId,
+          subjectCode: user.subject?.code ?? null,
+        };
       },
     }),
   ],
@@ -35,6 +46,10 @@ export const authOptions: NextAuthOptions = {
         token.id = user.id;
         token.role = user.role;
         token.classId = user.classId;
+        // 教师绑定（班主任/科目教师）登录时进 JWT；管理员改绑定后下次登录生效
+        token.headTeacherClassId = user.headTeacherClassId;
+        token.subjectId = user.subjectId;
+        token.subjectCode = user.subjectCode;
       }
       return token;
     },
@@ -43,6 +58,9 @@ export const authOptions: NextAuthOptions = {
         session.user.id = token.id as string;
         session.user.role = token.role as Role;
         session.user.classId = (token.classId as string | null) ?? null;
+        session.user.headTeacherClassId = (token.headTeacherClassId as string | null) ?? null;
+        session.user.subjectId = (token.subjectId as string | null) ?? null;
+        session.user.subjectCode = (token.subjectCode as string | null) ?? null;
       }
       return session;
     },

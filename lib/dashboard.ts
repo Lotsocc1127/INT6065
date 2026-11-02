@@ -42,11 +42,16 @@ export type DashboardResult = { ok: true; dto: DashboardDto } | { ok: false; err
 export async function aggregateDashboard(opts: {
   subjectCode: string;
   classId?: string;
+  /** 可见班级白名单（班主任权限）：过滤 DTO 的 classes 并拦截越界 classId */
+  visibleClassIds?: string[];
 }): Promise<DashboardResult> {
   const subject = await prisma.subject.findUnique({ where: { code: opts.subjectCode } });
   if (!subject) return { ok: false, error: "科目不存在" };
 
-  const classes = await prisma.class.findMany({ orderBy: { name: "asc" } });
+  const allClasses = await prisma.class.findMany({ orderBy: { name: "asc" } });
+  const classes = opts.visibleClassIds
+    ? allClasses.filter((c) => opts.visibleClassIds!.includes(c.id))
+    : allClasses;
   const cls = opts.classId ? classes.find((c) => c.id === opts.classId) : classes[0];
   if (!cls) return { ok: false, error: "没有班级数据" };
 
@@ -98,9 +103,11 @@ export async function aggregateDashboard(opts: {
     where: { subjectId: subject.id, classId: cls.id },
     include: { _count: { select: { submissions: true } } },
   });
-  const submissionRate = assignments.length
-    ? avg(assignments.map((a) => a._count.submissions / students.length))
-    : 0;
+  // 空班级（无学生）时提交率为 0，避免 0/0 产生 NaN/Infinity 进入看板与导出
+  const submissionRate =
+    assignments.length && students.length
+      ? avg(assignments.map((a) => a._count.submissions / students.length))
+      : 0;
 
   // 班级掌握度趋势：按天聚合全部 MasteryPoint 历史
   const points = await prisma.masteryPoint.findMany({

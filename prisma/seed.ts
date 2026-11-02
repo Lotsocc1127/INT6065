@@ -63,9 +63,9 @@ async function main() {
   const teacher = await prisma.user.create({
     data: { name: "王老师", role: Role.TEACHER, password: passwordHash },
   });
-  // 额外两名测试教师
-  await prisma.user.create({ data: { name: "李老师", role: Role.TEACHER, password: passwordHash } });
-  await prisma.user.create({ data: { name: "张老师", role: Role.TEACHER, password: passwordHash } });
+  // 额外两名测试教师（班主任）
+  const teacher2 = await prisma.user.create({ data: { name: "李老师", role: Role.TEACHER, password: passwordHash } });
+  const teacher3 = await prisma.user.create({ data: { name: "张老师", role: Role.TEACHER, password: passwordHash } });
   const admin = await prisma.user.create({
     data: { name: "管理员", role: Role.ADMIN, password: passwordHash },
   });
@@ -73,6 +73,11 @@ async function main() {
   const cls1 = await prisma.class.create({ data: { name: "七年级(1)班" } });
   const cls2 = await prisma.class.create({ data: { name: "七年级(2)班" } });
   const cls = await prisma.class.create({ data: { name: "七年级(3)班" } });
+
+  // 班主任绑定：王老师→(1)班、李老师→(2)班、张老师→(3)班
+  await prisma.user.update({ where: { id: teacher.id }, data: { headTeacherClassId: cls1.id } });
+  await prisma.user.update({ where: { id: teacher2.id }, data: { headTeacherClassId: cls2.id } });
+  await prisma.user.update({ where: { id: teacher3.id }, data: { headTeacherClassId: cls.id } });
 
   // 基础掌握度画像：学优/中等/学弱 三档
   const studentProfiles: { name: string; base: number }[] = [
@@ -149,6 +154,17 @@ async function main() {
   });
   const chinese = await prisma.subject.create({
     data: { code: "chinese", name: "语文" },
+  });
+
+  // 科目教师测试账号：孙老师=数学、周老师=英语、吴老师=语文（仅可见本学科）
+  await prisma.user.create({
+    data: { name: "孙老师", role: Role.TEACHER, password: passwordHash, subjectId: math.id },
+  });
+  await prisma.user.create({
+    data: { name: "周老师", role: Role.TEACHER, password: passwordHash, subjectId: english.id },
+  });
+  await prisma.user.create({
+    data: { name: "吴老师", role: Role.TEACHER, password: passwordHash, subjectId: chinese.id },
   });
 
   interface KpDef {
@@ -684,7 +700,10 @@ async function main() {
   }
 
   console.log("种子完成：");
-  console.log(`  教师：${teacher.name}、李老师、张老师`);
+  console.log(
+    `  班主任：${teacher.name}（${cls1.name}）、李老师（${cls2.name}）、张老师（${cls.name}）`
+  );
+  console.log(`  科目教师：孙老师（数学）、周老师（英语）、吴老师（语文）`);
   console.log(`  管理员：${admin.name}`);
   console.log(
     `  班级：${cls1.name}（30 人）、${cls2.name}（30 人）、${cls.name}（30 人），共 ${students.length} 名学生`

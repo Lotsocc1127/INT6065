@@ -3,6 +3,10 @@ import { fail, ok } from "@/lib/api";
 import { requireApiUser } from "@/lib/auth";
 import { goalDto } from "@/lib/goals";
 import { prisma } from "@/lib/prisma";
+import {
+  assertNotSubjectTeacher,
+  assertTeacherCanAccessStudent,
+} from "@/lib/teacher-scope";
 
 export const dynamic = "force-dynamic";
 
@@ -10,12 +14,18 @@ export const dynamic = "force-dynamic";
  * PATCH /api/teacher/appeals/:goalId —— 复核学习目标申诉
  *  { decision: "accept" | "reject", reply?: string }
  *  采纳（accept）= 目标视为达成（done = true）；驳回（reject）= 目标恢复正常，学生可自行标记完成。
+ *  权限：班主任限本班学生；科目教师 403（目标无学科归属）。
  */
 export async function PATCH(req: NextRequest, { params }: { params: { goalId: string } }) {
   try {
     const session = await requireApiUser(["TEACHER", "ADMIN"]);
-    const goal = await prisma.learningGoal.findUnique({ where: { id: params.goalId } });
+    assertNotSubjectTeacher(session.user, "科目教师无权处理目标申诉");
+    const goal = await prisma.learningGoal.findUnique({
+      where: { id: params.goalId },
+      include: { student: { select: { classId: true } } },
+    });
     if (!goal) return ok({ error: "目标不存在" }, 404);
+    assertTeacherCanAccessStudent(session.user, goal.student);
     if (goal.appealStatus !== "PENDING") return ok({ error: "该申诉已处理" }, 400);
 
     const body = await req.json();

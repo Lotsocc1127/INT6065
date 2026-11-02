@@ -5,22 +5,24 @@ import { prisma } from "@/lib/prisma";
 import { generateTypedQuestions } from "@/lib/gen";
 import { aggregateRemedialKps, kpContext, pickTier } from "@/lib/remedial";
 import type { Tier } from "@/lib/mastery";
+import { resolveClassId, resolveSubjectCode } from "@/lib/teacher-scope";
 
 export const dynamic = "force-dynamic";
 
 const TIER_VALUES = ["foundation", "intermediate", "advanced"];
 
-/** POST /api/remedial/generate —— 变式补救题生成：{subjectCode, kpIds(≤4), perKp(1-3), tier:"auto"|Tier, classId?} */
+/** POST /api/remedial/generate —— 变式补救题生成：{subjectCode, kpIds(≤4), perKp(1-3), tier:"auto"|Tier, classId?}
+ * 班主任限本班、科目教师限本学科（resolve 助手强制） */
 export async function POST(req: NextRequest) {
   try {
-    await requireApiUser(["TEACHER", "ADMIN"]);
+    const session = await requireApiUser(["TEACHER", "ADMIN"]);
     const body = await req.json();
-    const subjectCode = String(body?.subjectCode ?? "math");
+    const subjectCode = resolveSubjectCode(session.user, body?.subjectCode) ?? "math";
     const kpIds: string[] = (Array.isArray(body?.kpIds) ? body.kpIds : []).map(String);
     if (!kpIds.length) return ok({ error: "请选择至少一个知识点" }, 400);
     if (kpIds.length > 4) return ok({ error: "一次最多选择 4 个知识点" }, 400);
     const perKp = Math.min(3, Math.max(1, Number(body?.perKp) || 2));
-    const classId = body?.classId ? String(body.classId) : undefined;
+    const classId = resolveClassId(session.user, body?.classId);
 
     const subject = await prisma.subject.findUnique({ where: { code: subjectCode } });
     if (!subject) return ok({ error: "科目不存在" }, 404);

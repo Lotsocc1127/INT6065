@@ -4,21 +4,29 @@ import { requireApiUser } from "@/lib/auth";
 import { goalDto } from "@/lib/goals";
 import { avg } from "@/lib/mastery";
 import { prisma } from "@/lib/prisma";
+import {
+  assertTeacherCanAccessStudent,
+  getTeacherScope,
+} from "@/lib/teacher-scope";
 
 export const dynamic = "force-dynamic";
 
-/** GET /api/students/:id —— 学生详情（教师端）：掌握度、历史、目标、错题与作答统计 */
+/** GET /api/students/:id —— 学生详情（教师端）：掌握度、历史、目标、错题与作答统计
+ * 班主任限本班学生（越界 403）；科目教师仅返回本学科数据（目标/作答统计同样只统计本学科） */
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   try {
-    await requireApiUser(["TEACHER", "ADMIN"]);
+    const session = await requireApiUser(["TEACHER", "ADMIN"]);
     const student = await prisma.user.findUnique({
       where: { id: params.id },
       include: { class: true },
     });
     if (!student) return ok({ error: "学生不存在" }, 404);
+    assertTeacherCanAccessStudent(session.user, student);
+    const scope = getTeacherScope(session.user);
+    const subjectFilter = scope?.subjectId ? { subjectId: scope.subjectId } : {};
 
     const masteries = await prisma.mastery.findMany({
-      where: { studentId: student.id },
+      where: { studentId: student.id, ...subjectFilter },
       include: { kp: true, history: { orderBy: { at: "asc" } } },
     });
 
@@ -36,9 +44,18 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
     const [goals, wrongCount, submissions] = await Promise.all([
       prisma.learningGoal.findMany({ where: { studentId: student.id }, orderBy: { createdAt: "desc" } }),
-      prisma.wrongQuestion.count({ where: { studentId: student.id, mastered: false } }),
+      prisma.wrongQuestion.count({
+        where: {
+          studentId: student.id,
+          mastered: false,
+          ...(scope?.subjectId ? { question: { subjectId: scope.subjectId } } : {}),
+        },
+      }),
       prisma.submission.findMany({
-        where: { studentId: student.id },
+        where: {
+          studentId: student.id,
+          ...(scope?.subjectId ? { assignment: { subjectId: scope.subjectId } } : {}),
+        },
         include: { answers: true, assignment: true },
         orderBy: { submittedAt: "desc" },
       }),

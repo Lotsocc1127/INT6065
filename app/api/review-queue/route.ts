@@ -4,16 +4,22 @@ import { requireApiUser } from "@/lib/auth";
 import { parseArr } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 import { applyReview } from "@/lib/review";
+import {
+  assertTeacherCanAccessAssignment,
+  resolveClassId,
+  resolveSubjectCode,
+} from "@/lib/teacher-scope";
 
 export const dynamic = "force-dynamic";
 
-/** GET /api/review-queue —— 待复核队列（低置信度/未批改的解答题作答） */
+/** GET /api/review-queue —— 待复核队列（低置信度/未批改的解答题作答）
+ * 班主任限本班学生、科目教师限本学科（resolve 助手强制，countOnly 同口径 → 导航徽章自动范围正确） */
 export async function GET(req: NextRequest) {
   try {
-    await requireApiUser(["TEACHER", "ADMIN"]);
+    const session = await requireApiUser(["TEACHER", "ADMIN"]);
     const sp = req.nextUrl.searchParams;
-    const subjectCode = sp.get("subject") ?? undefined;
-    const classId = sp.get("classId") ?? undefined;
+    const subjectCode = resolveSubjectCode(session.user, sp.get("subject"));
+    const classId = resolveClassId(session.user, sp.get("classId"));
     const countOnly = sp.get("countOnly") === "1";
 
     const subject = subjectCode
@@ -74,10 +80,11 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/** POST /api/review-queue —— 复核操作：confirm 确认 AI 判分 / override 教师改判 */
+/** POST /api/review-queue —— 复核操作：confirm 确认 AI 判分 / override 教师改判
+ * 权限：班主任限本班、科目教师限本学科（越界 403） */
 export async function POST(req: NextRequest) {
   try {
-    await requireApiUser(["TEACHER", "ADMIN"]);
+    const session = await requireApiUser(["TEACHER", "ADMIN"]);
     const body = await req.json();
     const { recordId, action, isCorrect, score, errorAnalysis, errorTags } = body as {
       recordId?: string;
@@ -92,10 +99,19 @@ export async function POST(req: NextRequest) {
     const record = await prisma.answerRecord.findUnique({
       where: { id: recordId },
       include: {
-        submission: { select: { assignmentId: true, assignment: { select: { title: true, source: true } } } },
+        submission: {
+          select: {
+            assignmentId: true,
+            assignment: { select: { title: true, source: true, classId: true, subjectId: true } },
+          },
+        },
       },
     });
     if (!record) return ok({ error: "作答记录不存在" }, 404);
+    assertTeacherCanAccessAssignment(session.user, {
+      classId: record.submission.assignment.classId,
+      subjectId: record.submission.assignment.subjectId,
+    });
 
     // 通知学生：批改已复核（演示数据不打扰真实学生）
     async function notifyReviewed() {

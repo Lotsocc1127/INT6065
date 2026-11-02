@@ -9,16 +9,18 @@ import { parseArr } from "@/lib/json";
 import { PREP_SYSTEM, prepContext } from "@/lib/prompts";
 import { prisma } from "@/lib/prisma";
 import { formatStudent } from "@/lib/utils";
+import { classListWhere, resolveClassId, resolveSubjectCode } from "@/lib/teacher-scope";
 
 export const dynamic = "force-dynamic";
 
 /** POST /api/ai/prep —— AI 备课助手（7.7）：结合班级学情生成可编辑教案
- * {subjectCode, classId?, kpCodes?, lessons?, requirement?} */
+ * {subjectCode, classId?, kpCodes?, lessons?, requirement?}
+ * 班主任限本班、科目教师限本学科（resolve 助手强制） */
 export async function POST(req: NextRequest) {
   try {
-    await requireApiUser(["TEACHER", "ADMIN"]);
+    const session = await requireApiUser(["TEACHER", "ADMIN"]);
     const body = await req.json();
-    const subjectCode = String(body?.subjectCode ?? "math");
+    const subjectCode = resolveSubjectCode(session.user, body?.subjectCode) ?? "math";
     const kpCodes: string[] = Array.isArray(body?.kpCodes) ? body.kpCodes : [];
     const lessons = Math.min(8, Math.max(1, Number(body?.lessons) || 1));
     const requirement = String(body?.requirement ?? "").slice(0, 500);
@@ -26,10 +28,12 @@ export async function POST(req: NextRequest) {
     const subject = await prisma.subject.findUnique({ where: { code: subjectCode } });
     if (!subject) return ok({ error: "科目不存在" }, 404);
 
-    const classes = await prisma.class.findMany({ orderBy: { name: "asc" } });
-    const cls = body?.classId
-      ? classes.find((c) => c.id === String(body.classId))
-      : classes[0];
+    const classes = await prisma.class.findMany({
+      where: classListWhere(session.user),
+      orderBy: { name: "asc" },
+    });
+    const classId = resolveClassId(session.user, body?.classId);
+    const cls = classId ? classes.find((c) => c.id === classId) : classes[0];
     if (!cls) return ok({ error: "没有班级数据" }, 404);
 
     const kps = await prisma.knowledgePoint.findMany({

@@ -38,6 +38,25 @@ async function getSessionCookie(userId: string, password = "123456"): Promise<st
 async function main() {
   const teacher = await prisma.user.findFirstOrThrow({ where: { role: "TEACHER" } });
   const student = await prisma.user.findFirstOrThrow({ where: { role: "STUDENT" } });
+  // 教师绑定范围对齐：班主任学生/作业选其本班；科目教师选其本学科
+  const teacherScope = {
+    headTeacherClassId: teacher.headTeacherClassId,
+    subjectId: teacher.subjectId,
+  };
+  const studentForTeacher = teacherScope.headTeacherClassId
+    ? await prisma.user.findFirstOrThrow({
+        where: { role: "STUDENT", classId: teacherScope.headTeacherClassId },
+      })
+    : student;
+  const teacherAssignment = await prisma.assignment.findFirst({
+    where: {
+      ...(teacherScope.headTeacherClassId ? { classId: teacherScope.headTeacherClassId } : {}),
+      ...(teacherScope.subjectId ? { subjectId: teacherScope.subjectId } : {}),
+    },
+  });
+  const teacherSubjectCode = teacherScope.subjectId
+    ? (await prisma.subject.findUnique({ where: { id: teacherScope.subjectId } }))?.code ?? "english"
+    : "english";
 
   const browser = await chromium.launch({
     channel: "msedge",
@@ -80,10 +99,10 @@ async function main() {
     await ctx.close();
   }
 
-  // 教师端页面（含科目切换后的看板）
+  // 教师端页面（科目切换用教师可见科目；科目教师只有本学科）
   const teacherPaths = [
     "/teacher",
-    "/teacher?subject=english",
+    `/teacher?subject=${teacherSubjectCode}`,
     "/teacher/assignments",
     "/teacher/assignments/new",
     "/teacher/review",
@@ -91,17 +110,21 @@ async function main() {
     "/teacher/weekly-report",
     "/teacher/students",
   ];
-  // 作业详情与学生详情需要真实 id
-  const assignment = await prisma.assignment.findFirstOrThrow();
-  teacherPaths.push(`/teacher/assignments/${assignment.id}`);
-  teacherPaths.push(`/teacher/assignments/${assignment.id}/lecture`);
-  teacherPaths.push(`/teacher/students/${student.id}`);
+  // 作业详情与学生详情需要真实 id（与教师范围匹配，避免 403 死端）
+  if (teacherAssignment) {
+    teacherPaths.push(`/teacher/assignments/${teacherAssignment.id}`);
+    teacherPaths.push(`/teacher/assignments/${teacherAssignment.id}/lecture`);
+  }
+  teacherPaths.push(`/teacher/students/${studentForTeacher.id}`);
   await checkPages("教师端", teacher.id, teacherPaths);
 
   // 学生端页面
   const submission = await prisma.submission.findFirstOrThrow({
     where: { studentId: student.id },
     orderBy: { submittedAt: "desc" },
+  });
+  const studentAssignment = await prisma.assignment.findFirst({
+    where: { classId: student.classId ?? "" },
   });
   const studentPaths = [
     "/student",
@@ -111,7 +134,9 @@ async function main() {
     "/student/wrong",
     "/student/growth",
     "/student/goals",
-    `/student/assignments/${assignment.id}`, // 未提交作业（作答视图）
+    ...(studentAssignment
+      ? [`/student/assignments/${studentAssignment.id}`] // 未提交作业（作答视图）
+      : []),
     `/student/assignments/${submission.assignmentId}`, // 已提交作业（批改视图）
   ];
   await checkPages("学生端", student.id, studentPaths);
@@ -119,6 +144,36 @@ async function main() {
   // 管理端页面（含教师端看板预览）
   const admin = await prisma.user.findFirstOrThrow({ where: { role: "ADMIN" } });
   await checkPages("管理端", admin.id, ["/admin", "/teacher"]);
+
+  // 科目教师端点检（与首教师不同科目教师账号；无则软跳过）
+  const subjTeacher = await prisma.user.findFirst({
+    where: { role: "TEACHER", subjectId: { not: null }, id: { not: teacher.id } },
+  });
+  if (subjTeacher) {
+    const stCode =
+      (await prisma.subject.findUnique({ where: { id: subjTeacher.subjectId! } }))?.code ?? "";
+    const stAssignment = await prisma.assignment.findFirst({
+      where: { subjectId: subjTeacher.subjectId! },
+    });
+    const stPaths = [
+      "/teacher",
+      `/teacher?subject=${stCode}`,
+      "/teacher/assignments",
+      "/teacher/assignments/new",
+      "/teacher/review",
+      "/teacher/tiers",
+      "/teacher/weekly-report",
+      "/teacher/students",
+      `/teacher/students/${student.id}`,
+    ];
+    if (stAssignment) {
+      stPaths.push(`/teacher/assignments/${stAssignment.id}`);
+      stPaths.push(`/teacher/assignments/${stAssignment.id}/lecture`);
+    }
+    await checkPages("科目教师端", subjTeacher.id, stPaths);
+  } else {
+    console.log("⚠️ 无科目教师账号，跳过科目教师端点检（可跑 backfill-teacher-bindings.ts）");
+  }
 
   // 未登录时登录页（下拉含全部账号）
   {

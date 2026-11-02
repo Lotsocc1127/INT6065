@@ -3,14 +3,17 @@ import { fail, ok } from "@/lib/api";
 import { requireApiUser } from "@/lib/auth";
 import { parseArr } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
+import { resolveSubjectCode } from "@/lib/teacher-scope";
 
 export const dynamic = "force-dynamic";
 
-/** GET /api/subjects/:code/knowledge-points —— 知识图谱（含前置依赖） */
+/** GET /api/subjects/:code/knowledge-points —— 知识图谱（含前置依赖）
+ * 科目教师限本学科（显式越界 403） */
 export async function GET(_req: NextRequest, { params }: { params: { code: string } }) {
   try {
-    await requireApiUser();
-    const subject = await prisma.subject.findUnique({ where: { code: params.code } });
+    const session = await requireApiUser();
+    const code = resolveSubjectCode(session.user, params.code) ?? params.code;
+    const subject = await prisma.subject.findUnique({ where: { code } });
     if (!subject) return ok({ error: "科目不存在" }, 404);
     const kps = await prisma.knowledgePoint.findMany({
       where: { subjectId: subject.id },

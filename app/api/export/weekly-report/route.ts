@@ -7,21 +7,26 @@ import { fillSheet, xlsxResponse } from "@/lib/export";
 import { TIER_META, type Tier } from "@/lib/mastery";
 import { formatStudent, pct } from "@/lib/utils";
 import { prisma } from "@/lib/prisma";
+import { classListWhere, resolveClassId, resolveSubjectCode } from "@/lib/teacher-scope";
 
 export const dynamic = "force-dynamic";
 
-/** GET /api/export/weekly-report?subject=&classId= —— 班级学情周报 Excel 导出（数据口径同 lib/weekly-report.ts） */
+/** GET /api/export/weekly-report?subject=&classId= —— 班级学情周报 Excel 导出（数据口径同 lib/weekly-report.ts）
+ * 班主任限本班、科目教师限本学科（resolve 助手强制，与看板口径一致） */
 export async function GET(req: NextRequest) {
   try {
-    await requireApiUser(["TEACHER", "ADMIN"]);
+    const session = await requireApiUser(["TEACHER", "ADMIN"]);
     const sp = req.nextUrl.searchParams;
-    const subject = await prisma.subject.findUnique({ where: { code: sp.get("subject") ?? "math" } });
+    const subjectCode = resolveSubjectCode(session.user, sp.get("subject")) ?? "math";
+    const subject = await prisma.subject.findUnique({ where: { code: subjectCode } });
     if (!subject) return ok({ error: "科目不存在" }, 404);
 
-    const classes = await prisma.class.findMany({ orderBy: { name: "asc" } });
-    const cls = sp.get("classId")
-      ? classes.find((c) => c.id === sp.get("classId"))
-      : classes[0];
+    const classes = await prisma.class.findMany({
+      where: classListWhere(session.user),
+      orderBy: { name: "asc" },
+    });
+    const classId = resolveClassId(session.user, sp.get("classId"));
+    const cls = classId ? classes.find((c) => c.id === classId) : classes[0];
     if (!cls) return ok({ error: "没有班级数据" }, 404);
 
     const stats = await aggregateWeeklyReport({

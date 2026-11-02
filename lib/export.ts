@@ -16,7 +16,7 @@ export async function xlsxResponse(wb: ExcelJS.Workbook, filename: string): Prom
   });
 }
 
-/** 填一张表：表头加粗 + 按表头长度设列宽；单元格值统一 String()（null → "—"） */
+/** 填一张表：表头加粗 + 按表头长度设列宽；数字原样写入（Excel 可排序/求和），null → "—" */
 export function fillSheet(
   ws: ExcelJS.Worksheet,
   headers: string[],
@@ -24,7 +24,7 @@ export function fillSheet(
 ): void {
   ws.columns = headers.map((h) => ({ header: h, width: Math.max(12, h.length * 2 + 4) }));
   for (const row of rows) {
-    ws.addRow(row.map((v) => (v == null ? "—" : String(v))));
+    ws.addRow(row.map((v) => (v == null ? "—" : v)));
   }
   ws.getRow(1).font = { bold: true };
 }

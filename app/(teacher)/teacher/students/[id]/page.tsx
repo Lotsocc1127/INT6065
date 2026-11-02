@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { ArrowLeft, Copy, Link2, MessageSquareWarning, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -84,9 +85,13 @@ function HistoryChart({ items }: { items: MasteryItem[] }) {
 
 export default function StudentDetailPage({ params }: { params: { id: string } }) {
   const id = params.id;
+  const { data: session } = useSession();
+  // 科目教师：详情仅本学科（服务端已过滤 mastery），隐藏分享链接管理；建议科目 Select 落到本学科
+  const ownSubject = session?.user?.subjectCode ?? null;
+  const isSubjectTeacher = Boolean(ownSubject);
   const [data, setData] = useState<StudentData | null>(null);
   const [error, setError] = useState("");
-  const [suggestSubject, setSuggestSubject] = useState("math");
+  const [suggestSubject, setSuggestSubject] = useState(ownSubject ?? "math");
   const [suggesting, setSuggesting] = useState(false);
   const [suggestion, setSuggestion] = useState<Suggestion | null>(null);
   const [shareLinks, setShareLinks] = useState<ShareLinkInfo[]>([]);
@@ -99,11 +104,11 @@ export default function StudentDetailPage({ params }: { params: { id: string } }
         const j = await r.json();
         if (!r.ok) throw new Error(j.error ?? "加载失败");
         setData(j);
-        if (j.mastery?.length) setSuggestSubject(j.mastery[0].subject.code);
+        if (!ownSubject && j.mastery?.length) setSuggestSubject(j.mastery[0].subject.code);
       })
       .catch((e) => setError(e.message));
-    loadShareLinks();
-  }, [id]);
+    if (!isSubjectTeacher) loadShareLinks();
+  }, [id, ownSubject, isSubjectTeacher]);
 
   async function loadShareLinks() {
     fetch(`/api/teacher/share-links?studentId=${id}`)
@@ -365,7 +370,8 @@ export default function StudentDetailPage({ params }: { params: { id: string } }
         </CardContent>
       </Card>
 
-      {/* 家长分享链接 */}
+      {/* 家长分享链接（科目教师只读，不展示分享链接管理） */}
+      {!isSubjectTeacher && (
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
@@ -422,6 +428,7 @@ export default function StudentDetailPage({ params }: { params: { id: string } }
           )}
         </CardContent>
       </Card>
+      )}
     </div>
   );
 }

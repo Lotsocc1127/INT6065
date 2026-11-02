@@ -376,7 +376,8 @@ export function lectureContext(opts: {
             .map((w) => `学号 ${w.studentNo ?? "—"} 作答「${w.response}」（${w.score == null ? "待批改" : `${Math.round(w.score * 100)}%`}）`)
             .join("；")
         : "无";
-    return `第 ${q.order} 题（${q.type}${q.kpCodes.length ? `，知识点 ${q.kpCodes.join("、")}` : ""}）
+    return `题目ID：${q.questionId}
+第 ${q.order} 题（${q.type}${q.kpCodes.length ? `，知识点 ${q.kpCodes.join("、")}` : ""}）
 题干：${q.stem}
 ${q.options.length ? `选项：${q.options.map((o, i) => `${String.fromCharCode(65 + i)}. ${o}`).join("；")}` : ""}
 标准答案：${q.answer}${q.analysis ? `\n解析：${q.analysis}` : ""}

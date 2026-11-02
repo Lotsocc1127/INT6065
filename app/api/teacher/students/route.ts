@@ -6,20 +6,28 @@ import { requireApiUser } from "@/lib/auth";
 import { validatePassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
 import { createStudentWithNo } from "@/lib/student-no";
+import {
+  assertTeacherCanManageStudents,
+  classListWhere,
+  resolveClassId,
+} from "@/lib/teacher-scope";
 
 export const dynamic = "force-dynamic";
 
 const DEMO_PASSWORD = process.env.DEMO_PASSWORD ?? "123456";
 
-/** GET /api/teacher/students?classId= —— 班级学生列表（教师/管理员） */
+/** GET /api/teacher/students?classId= —— 班级学生列表（教师/管理员）
+ * 班主任仅本班（越界 403）；科目教师可查看全部班级（只读） */
 export async function GET(req: NextRequest) {
   try {
-    await requireApiUser(["TEACHER", "ADMIN"]);
+    const session = await requireApiUser(["TEACHER", "ADMIN"]);
     const sp = req.nextUrl.searchParams;
-    const classes = await prisma.class.findMany({ orderBy: { name: "asc" } });
-    const cls = sp.get("classId")
-      ? classes.find((c) => c.id === sp.get("classId"))
-      : classes[0];
+    const classId = resolveClassId(session.user, sp.get("classId"));
+    const classes = await prisma.class.findMany({
+      where: classListWhere(session.user),
+      orderBy: { name: "asc" },
+    });
+    const cls = classId ? classes.find((c) => c.id === classId) : classes[0];
     if (!cls) return ok({ error: "没有班级数据" }, 404);
 
     const students = await prisma.user.findMany({
@@ -48,15 +56,18 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/** POST /api/teacher/students —— 添加学生 {name, password?, classId}（教师/管理员） */
+/** POST /api/teacher/students —— 添加学生 {name, password?, classId}（教师/管理员）
+ * 班主任限本班（越界 403）；科目教师 403（只读） */
 export async function POST(req: NextRequest) {
   try {
-    await requireApiUser(["TEACHER", "ADMIN"]);
+    const session = await requireApiUser(["TEACHER", "ADMIN"]);
+    assertTeacherCanManageStudents(session.user);
     const body = await req.json();
     const name = String(body?.name ?? "").trim();
-    const classId = String(body?.classId ?? "");
+    const classId = resolveClassId(session.user, String(body?.classId ?? "") || undefined);
     const password = String(body?.password ?? "").trim() || DEMO_PASSWORD;
     if (!name) return ok({ error: "请填写学生姓名" }, 400);
+    if (!classId) return ok({ error: "缺少班级" }, 400);
     const perr = validatePassword(password);
     if (perr) return ok({ error: perr }, 400);
     const cls = await prisma.class.findUnique({ where: { id: classId } });

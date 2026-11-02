@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { Check, CheckCircle2, ClipboardCheck, ExternalLink, Loader2, MessageSquareWarning, X, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -61,6 +62,9 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 export default function ReviewPage() {
+  const { data: session, status } = useSession();
+  // 科目教师不处理目标申诉（目标无学科归属，服务端 403）；隐藏申诉区避免死端 UI
+  const isSubjectTeacher = Boolean(session?.user?.subjectId);
   const [items, setItems] = useState<QueueItem[] | null>(null);
   const [error, setError] = useState("");
   const [acting, setActing] = useState<Record<string, boolean>>({});
@@ -100,12 +104,14 @@ export default function ReviewPage() {
 
   useEffect(() => {
     load();
-    loadAppeals("all");
-    fetch("/api/classes")
-      .then((r) => r.json())
-      .then((c) => setClasses(Array.isArray(c) ? c : []))
-      .catch(() => {});
-  }, [load, loadAppeals]);
+    if (status !== "loading" && !isSubjectTeacher) {
+      loadAppeals("all");
+      fetch("/api/classes")
+        .then((r) => r.json())
+        .then((c) => setClasses(Array.isArray(c) ? c : []))
+        .catch(() => {});
+    }
+  }, [load, loadAppeals, status, isSubjectTeacher]);
 
   function toggleForm(rec: QueueItem) {
     setForms((p) => ({
@@ -374,7 +380,8 @@ export default function ReviewPage() {
         </div>
       )}
 
-      {/* 第二个队列：学习目标申诉 */}
+      {/* 第二个队列：学习目标申诉（科目教师不可见——目标无学科归属） */}
+      {!isSubjectTeacher && (<>
       <div className="flex flex-wrap items-center gap-2 pt-2">
         <MessageSquareWarning className="h-5 w-5" />
         <h2 className="text-xl font-semibold">目标申诉</h2>
@@ -462,6 +469,7 @@ export default function ReviewPage() {
           })}
         </div>
       )}
+      </>)}
     </div>
   );
 }

@@ -1,14 +1,16 @@
 import { fail, ok } from "@/lib/api";
 import { requireApiUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { subjectListWhere } from "@/lib/teacher-scope";
 
 export const dynamic = "force-dynamic";
 
-/** GET /api/subjects —— 科目列表（科目切换框架的数据源） */
+/** GET /api/subjects —— 科目列表（科目切换框架的数据源；科目教师仅本学科） */
 export async function GET() {
   try {
-    await requireApiUser();
+    const session = await requireApiUser();
     const subjects = await prisma.subject.findMany({
+      where: subjectListWhere(session.user),
       orderBy: { code: "asc" },
       include: { _count: { select: { knowledgePoints: true, questions: true } } },
     });

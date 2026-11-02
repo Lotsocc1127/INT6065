@@ -15,6 +15,23 @@ const prisma = new PrismaClient();
 // 避免测试数据残留线上共享库（作业/目标/提交/掌握度/错题本都被真实账号污染）。
 let createdState: RunCreated | null = null;
 
+// 科目教师临时解绑的恢复信息（成功/失败双路径恢复）
+let restoreBinding: { teacherId: string; subjectId: string } | null = null;
+
+async function restoreTeacherBinding() {
+  if (!restoreBinding) return;
+  try {
+    await prisma.user.update({
+      where: { id: restoreBinding.teacherId },
+      data: { subjectId: restoreBinding.subjectId },
+    });
+    console.log("🔁 已恢复教师科目绑定");
+    restoreBinding = null;
+  } catch (e) {
+    console.error("⚠️ 恢复教师科目绑定失败（请手动恢复）:", e instanceof Error ? e.message : e);
+  }
+}
+
 class Session {
   cookies = new Map<string, string>();
 
@@ -102,8 +119,23 @@ async function findLoginable(role: "TEACHER" | "ADMIN") {
 
 async function main() {
   const teacher = await findLoginable("TEACHER");
+  // 教师绑定范围对齐（班主任/科目教师权限上线后）：
+  // - 班主任：学生改选其本班（cls 自动落在范围内，零 DB 变更）
+  // - 科目教师：临时清 subjectId 跑全量流程（成功/失败双路径恢复，见 main 结尾与 .catch）
+  const teacherBind = await prisma.user.findUnique({
+    where: { id: teacher.id },
+    select: { headTeacherClassId: true, subjectId: true },
+  });
+  if (teacherBind?.subjectId) {
+    restoreBinding = { teacherId: teacher.id, subjectId: teacherBind.subjectId };
+    await prisma.user.update({ where: { id: teacher.id }, data: { subjectId: null } });
+    console.log(`[setup] ${teacher.name} 为科目教师，临时解除科目绑定以跑全量流程（结束自动恢复）`);
+  }
   const student = await prisma.user.findFirstOrThrow({
-    where: { role: "STUDENT", classId: { not: null } },
+    where: {
+      role: "STUDENT",
+      classId: teacherBind?.headTeacherClassId ?? { not: null },
+    },
     orderBy: { name: "asc" },
   });
   const math = await prisma.subject.findUniqueOrThrow({ where: { code: "math" } });
@@ -1153,11 +1185,15 @@ async function main() {
     lecFirst.stats.wrongSamples.length === 1 && typeof lecFirst.stats.wrongSamples[0].studentNo === "string",
     "典型错误作答含学号"
   );
-  // 选择题选项分布（题库前 4 题未必全为选择题，找一道选择题验证）
-  const lecChoice = lec.questions.find((q: { type: string }) => q.type === "SINGLE_CHOICE") as
+  // 选择题选项分布：按题目 id 定位组 2 特意选中的选择题（首题答对）。
+  // 此前按「讲评排序中的第一道选择题」找，干净题库下可能命中被答「错误答案」的干扰题，
+  // 选项分布合计为 0 导致断言依赖残留演示数据的题目顺序（不稳定）。
+  const lecChoice = lec.questions.find(
+    (q: { id: string; type: string }) => q.id === firstChoice.id && q.type === "SINGLE_CHOICE"
+  ) as
     | { stats: { optionDist: { option: string; count: number }[] | null } }
     | undefined;
-  assert(Boolean(lecChoice), "讲评数据含选择题");
+  assert(Boolean(lecChoice), "讲评数据含组 2 选中的选择题（按题目 id 定位）");
   const od = lecChoice!.stats.optionDist;
   assert(Array.isArray(od) && od.length === 4, "选择题选项分布含 4 个选项");
   assert(od!.reduce((a, o) => a + o.count, 0) === 1, "选项分布人数合计等于作答数");
@@ -1214,6 +1250,210 @@ async function main() {
   const sExport = await s.fetch(`/api/export/dashboard?subject=math&classId=${cls.id}`);
   assert(sExport.status === 403, `学生访问导出被拒 ${sExport.status}`);
 
+  console.log("\n== 26. 教师绑定权限范围（班主任/科目教师/未绑定/管理员）==");
+
+  // ---- 科目教师：只看本学科（跨班可见），写操作 403 ----
+  const subjTeacher = await prisma.user.findFirst({
+    where: { role: "TEACHER", subjectId: { not: null } },
+    orderBy: { name: "asc" },
+  });
+  if (subjTeacher) {
+    const subjSubject = await prisma.subject.findUnique({ where: { id: subjTeacher.subjectId! } });
+    const otherSubject = await prisma.subject.findFirst({ where: { id: { not: subjTeacher.subjectId! } } });
+    const st = new Session();
+    let stOk = false;
+    try {
+      await st.login(subjTeacher.id);
+      stOk = true;
+    } catch {
+      console.log(`  ⚠️ 软跳过科目教师断言：${subjTeacher.name} 无法用默认密码登录`);
+    }
+    if (stOk && subjSubject && otherSubject) {
+      const code = subjSubject.code;
+      const subjRes = await st.fetch("/api/subjects");
+      const subjList = (await subjRes.json()) as { code: string }[];
+      assert(
+        subjRes.status === 200 && subjList.length === 1 && subjList[0].code === code,
+        `科目教师 /api/subjects 仅本学科（${code}）`
+      );
+      const clsRes = await st.fetch("/api/classes");
+      const clsList = (await clsRes.json()) as unknown[];
+      assert(clsRes.status === 200 && clsList.length >= 1, "科目教师可见全部班级");
+      const asgRes = await st.fetch("/api/assignments");
+      const asgList = (await asgRes.json()) as { subjectCode: string }[];
+      assert(
+        asgRes.status === 200 && asgList.every((a) => a.subjectCode === code),
+        "科目教师作业列表仅本学科"
+      );
+      const asgOther = await st.fetch(`/api/assignments?subject=${otherSubject.code}`);
+      assert(asgOther.status === 403, `科目教师显式请求他学科作业列表 403（${asgOther.status}）`);
+      const qOwn = await st.fetch(`/api/questions?subject=${code}`);
+      const qOwnList = (await qOwn.json()) as { id: string }[];
+      assert(qOwn.status === 200 && qOwnList.length >= 1, "科目教师可浏览本学科题库");
+      const qOther = await st.fetch(`/api/questions?subject=${otherSubject.code}`);
+      assert(qOther.status === 403, `科目教师他学科题库 403（${qOther.status}）`);
+      const postOther = await st.fetch("/api/assignments", {
+        method: "POST",
+        body: JSON.stringify({
+          title: "E2E 范围验证-科目教师越界",
+          type: "HOMEWORK",
+          subjectId: otherSubject.id,
+          classId: cls.id,
+          questionIds: [qOwnList[0].id],
+        }),
+      });
+      assert(postOther.status === 403, `科目教师布置他学科作业 403（${postOther.status}）`);
+      const postOwn = await st.fetch("/api/assignments", {
+        method: "POST",
+        body: JSON.stringify({
+          title: "E2E 范围验证-科目教师本学科",
+          type: "HOMEWORK",
+          subjectId: subjSubject.id,
+          classId: cls.id,
+          questionIds: [qOwnList[0].id],
+        }),
+      });
+      assert(postOwn.status === 201, `科目教师布置本学科作业 201（${postOwn.status}）`);
+      const ownAsg = (await postOwn.json()) as { id: string };
+      createdState!.assignmentIds.push(ownAsg.id);
+      const dashOwn = await st.fetch(`/api/teacher/dashboard?subject=${code}&classId=${cls.id}`);
+      const dashJ = (await dashOwn.json()) as { subject?: { code: string } };
+      assert(dashOwn.status === 200 && dashJ.subject?.code === code, "科目教师看板本学科 200");
+      const dashOther = await st.fetch(
+        `/api/teacher/dashboard?subject=${otherSubject.code}&classId=${cls.id}`
+      );
+      assert(dashOther.status === 403, `科目教师看板他学科 403（${dashOther.status}）`);
+      const stuRes = await st.fetch(`/api/teacher/students?classId=${cls.id}`);
+      assert(stuRes.status === 200, "科目教师可查看学生列表（只读）");
+      const stuAdd = await st.fetch("/api/teacher/students", {
+        method: "POST",
+        body: JSON.stringify({ name: "E2E范围测试生", classId: cls.id }),
+      });
+      assert(stuAdd.status === 403, `科目教师添加学生 403（${stuAdd.status}）`);
+      const stuPatch = await st.fetch(`/api/teacher/students/${student.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ password: "123456" }),
+      });
+      assert(stuPatch.status === 403, `科目教师重置学生密码 403（${stuPatch.status}）`);
+      const stuDel = await st.fetch(`/api/teacher/students/${student.id}`, { method: "DELETE" });
+      assert(stuDel.status === 403, `科目教师移出学生 403（${stuDel.status}）`);
+      const stuDetail = await st.fetch(`/api/students/${student.id}`);
+      const stuDetailJ = (await stuDetail.json()) as { mastery?: { subject?: { code: string } }[] };
+      assert(stuDetail.status === 200, "科目教师可查看学生详情");
+      assert(
+        (stuDetailJ.mastery ?? []).every((g) => g.subject?.code === code),
+        "科目教师学生详情仅本学科 mastery"
+      );
+      const appealRes = await st.fetch("/api/teacher/appeals");
+      assert(appealRes.status === 403, `科目教师申诉队列 403（${appealRes.status}）`);
+      const tiersPost = await st.fetch("/api/teacher/tiers", {
+        method: "POST",
+        body: JSON.stringify({ items: [{ studentId: student.id, tier: "advanced" }] }),
+      });
+      assert(tiersPost.status === 403, `科目教师锁定分层 403（${tiersPost.status}）`);
+      const tiersGet = await st.fetch(`/api/teacher/tiers?subject=${code}&classId=${cls.id}`);
+      assert(tiersGet.status === 200, "科目教师查看分层建议 200");
+      const prepOther = await st.fetch("/api/ai/prep", {
+        method: "POST",
+        body: JSON.stringify({ subjectCode: otherSubject.code, classId: cls.id }),
+      });
+      assert(prepOther.status === 403, `科目教师他学科备课 403（${prepOther.status}）`);
+      const rqCount = await st.fetch("/api/review-queue?countOnly=1");
+      assert(rqCount.status === 200, "科目教师复核队列 countOnly 200（范围过滤）");
+      const exportOwn = await st.fetch(`/api/export/dashboard?subject=${code}&classId=${cls.id}`);
+      assert(exportOwn.status === 200, `科目教师看板导出 200（${exportOwn.status}）`);
+      const exportOther = await st.fetch(
+        `/api/export/dashboard?subject=${otherSubject.code}&classId=${cls.id}`
+      );
+      assert(exportOther.status === 403, `科目教师看板导出他学科 403（${exportOther.status}）`);
+    }
+  } else {
+    console.log("  ⚠️ 软跳过科目教师断言：共享库无科目教师账号（先跑 backfill-teacher-bindings.ts）");
+  }
+
+  // ---- 班主任（专用账号保证覆盖率）：只看本班，跨班 403 ----
+  const headTeacher = await prisma.user.findFirst({
+    where: { role: "TEACHER", headTeacherClassId: { not: null } },
+    orderBy: { name: "asc" },
+  });
+  if (headTeacher) {
+    const ht = new Session();
+    let htOk = false;
+    try {
+      await ht.login(headTeacher.id);
+      htOk = true;
+    } catch {
+      console.log(`  ⚠️ 软跳过班主任断言：${headTeacher.name} 无法用默认密码登录`);
+    }
+    if (htOk) {
+      const htCls = await prisma.class.findUniqueOrThrow({
+        where: { id: headTeacher.headTeacherClassId! },
+      });
+      const clsRes = await ht.fetch("/api/classes");
+      const clsList = (await clsRes.json()) as { id: string }[];
+      assert(
+        clsRes.status === 200 && clsList.length === 1 && clsList[0].id === htCls.id,
+        `班主任 /api/classes 仅本班（${htCls.name}）`
+      );
+      const otherCls = await prisma.class.findFirst({ where: { id: { not: htCls.id } } });
+      if (otherCls) {
+        const otherStudent = await prisma.user.findFirst({
+          where: { role: "STUDENT", classId: otherCls.id },
+        });
+        const dashOther = await ht.fetch(
+          `/api/teacher/dashboard?subject=math&classId=${otherCls.id}`
+        );
+        assert(dashOther.status === 403, `班主任看板跨班 403（${dashOther.status}）`);
+        const expOther = await ht.fetch(`/api/export/dashboard?subject=math&classId=${otherCls.id}`);
+        assert(expOther.status === 403, `班主任看板导出跨班 403（${expOther.status}）`);
+        const stuOther = await ht.fetch(`/api/teacher/students?classId=${otherCls.id}`);
+        assert(stuOther.status === 403, `班主任学生列表跨班 403（${stuOther.status}）`);
+        const postOther = await ht.fetch("/api/assignments", {
+          method: "POST",
+          body: JSON.stringify({
+            title: "E2E 范围验证-班主任越界",
+            type: "HOMEWORK",
+            subjectId: math.id,
+            classId: otherCls.id,
+            questionIds: [firstChoice.id],
+          }),
+        });
+        assert(postOther.status === 403, `班主任跨班布置作业 403（${postOther.status}）`);
+        if (otherStudent) {
+          const detailOther = await ht.fetch(`/api/students/${otherStudent.id}`);
+          assert(detailOther.status === 403, `班主任跨班学生详情 403（${detailOther.status}）`);
+        }
+      }
+      // 本班建学生 → 断言后直接 DB 删除（DELETE API 仅移出班级，会残留账号）
+      const stuAdd = await ht.fetch("/api/teacher/students", {
+        method: "POST",
+        body: JSON.stringify({ name: "E2E范围测试生", classId: htCls.id }),
+      });
+      assert(stuAdd.status === 201, `班主任本班添加学生 201（${stuAdd.status}）`);
+      const added = (await stuAdd.json()) as { id: string };
+      await prisma.user.delete({ where: { id: added.id } });
+      const appealCount = await ht.fetch("/api/teacher/appeals?countOnly=1");
+      assert(appealCount.status === 200, "班主任申诉队列 countOnly 200（范围过滤）");
+    }
+  } else {
+    console.log("  ⚠️ 软跳过班主任断言：共享库无班主任账号（先跑 backfill-teacher-bindings.ts）");
+  }
+
+  // ---- 未绑定教师：保持全量（向后兼容；仅当本轮选中教师本就未绑定时断言）----
+  if (!teacherBind?.headTeacherClassId && !teacherBind?.subjectId) {
+    const clsRes = await t.fetch("/api/classes");
+    const clsList = (await clsRes.json()) as unknown[];
+    assert(clsRes.status === 200 && clsList.length >= 2, "未绑定教师可见全部班级（向后兼容）");
+  }
+
+  // ---- 管理员：始终全量 ----
+  const admin26 = await findLoginable("ADMIN");
+  const adS = new Session();
+  await adS.login(admin26.id);
+  const adCls = await adS.fetch("/api/classes");
+  const adClsList = (await adCls.json()) as unknown[];
+  assert(adCls.status === 200 && adClsList.length >= 2, "管理员可见全部班级");
+
   // 自清理：删除本轮创建的作业/目标/分享链接，并按剩余提交恢复该生掌握度与错题本
   // （失败路径同样清理，见 main().catch；两处都容错——清理失败不影响断言结果，只提示残留风险）
   if (createdState) {
@@ -1224,6 +1464,7 @@ async function main() {
       console.error("\n⚠️ 自清理失败（共享库可能残留本轮数据）:", e instanceof Error ? e.message : e);
     }
   }
+  await restoreTeacherBinding();
 
   console.log(
     "\n✅ 全部端到端断言通过：闭环（布置 → 作答 → 批改 → 掌握度 → 错题 → 看板）+ F1 复核队列 + F2 补救聚合 + 学习目标申诉闭环 + 分层升降 + 周报 + 家长分享 + 学号与重名验证成功！"
@@ -1241,6 +1482,7 @@ main()
         console.error("⚠️ 失败路径清理未完成（共享库可能残留本轮数据）:", ce instanceof Error ? ce.message : ce);
       }
     }
+    await restoreTeacherBinding();
     process.exit(1);
   })
   .finally(() => prisma.$disconnect());

@@ -56,6 +56,19 @@ export interface LectureData {
 
 const OPTION_LETTERS = "ABCDEFGHIJKLMN";
 
+/** 统一「错误」判定：答错 或 部分得分 <0.6（与错题本/统计口径一致，见 lib/grading.ts） */
+const isWrongAnswer = (a: { isCorrect: boolean | null; score: number | null }) =>
+  a.isCorrect === false || (a.score != null && a.score < 0.6);
+
+/** 选择题作答归一：裸字母 / 「A. 文本」 / 完整选项文本（存量数据可能三种都有）都归属到对应字母 */
+function choiceLetterOf(response: string, options: string[], index: number, letter: string): boolean {
+  const t = response.trim();
+  if (t.toUpperCase() === letter) return true;
+  if (t === options[index]) return true; // 完整选项文本（不带字母前缀）
+  if (t.length > 1 && t[0].toUpperCase() === letter && /^[A-Za-z][.．、:：)）]/.test(t)) return true; // "A. …"
+  return false;
+}
+
 export async function buildLectureData(assignmentId: string): Promise<LectureData | null> {
   const assignment = await prisma.assignment.findUnique({
     where: { id: assignmentId },
@@ -117,21 +130,19 @@ export async function buildLectureData(assignmentId: string): Promise<LectureDat
     for (const r of rows) {
       const b = breakdown[tierByStudent.get(r.stu.id) ?? tierOf(0)];
       b.total += 1;
-      if (r.a.isCorrect === false) b.wrong += 1;
+      if (isWrongAnswer(r.a)) b.wrong += 1;
     }
 
     const options = parseArr<string>(q.options);
     const optionDist =
       q.type === "SINGLE_CHOICE"
-        ? [...OPTION_LETTERS.slice(0, options.length)].map((letter) => ({
+        ? [...OPTION_LETTERS.slice(0, options.length)].map((letter, i) => ({
             option: letter,
-            count: rows.filter((r) => r.a.response.trim().toUpperCase() === letter).length,
+            count: rows.filter((r) => choiceLetterOf(r.a.response, options, i, letter)).length,
           }))
         : null;
 
-    const wrongRows = rows.filter(
-      (r) => r.a.isCorrect === false || (r.a.score != null && r.a.score < 0.6)
-    );
+    const wrongRows = rows.filter((r) => isWrongAnswer(r.a));
 
     return {
       id: q.id,
@@ -149,7 +160,7 @@ export async function buildLectureData(assignmentId: string): Promise<LectureDat
       stats: {
         total: rows.length,
         correct: rows.filter((r) => r.a.isCorrect === true).length,
-        wrong: rows.filter((r) => r.a.isCorrect === false).length,
+        wrong: rows.filter((r) => isWrongAnswer(r.a)).length,
         pending: rows.filter((r) => r.a.score == null).length,
         scoreRate: scored.length ? avg(scored) : null,
         avgTimeMs: times.length ? avg(times) : null,
@@ -167,12 +178,12 @@ export async function buildLectureData(assignmentId: string): Promise<LectureDat
     };
   });
 
-  // 讲评顺序：错误数降序 → 得分率升序（null 靠后）→ 保持原题序
+  // 讲评顺序：错误数降序 → 得分率升序（null 靠后：把未批改当 +Infinity，避免 -1 抢到已批改题之前）→ 保持原题序
   questions.sort((a, b) => {
     if (b.stats.wrong !== a.stats.wrong) return b.stats.wrong - a.stats.wrong;
-    if ((a.stats.scoreRate ?? -1) !== (b.stats.scoreRate ?? -1)) {
-      return (a.stats.scoreRate ?? -1) - (b.stats.scoreRate ?? -1);
-    }
+    const sa = a.stats.scoreRate ?? Number.POSITIVE_INFINITY;
+    const sb = b.stats.scoreRate ?? Number.POSITIVE_INFINITY;
+    if (sa !== sb) return sa - sb;
     return a.order - b.order;
   });
 

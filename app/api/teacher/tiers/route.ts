@@ -7,22 +7,32 @@ import { TIER_ADVICE_SYSTEM, tierAdviceContext } from "@/lib/prompts";
 import { prisma } from "@/lib/prisma";
 import { isValidTier } from "@/lib/tier";
 import { suggestTierChanges } from "@/lib/tiers-suggest";
+import {
+  assertNotSubjectTeacher,
+  assertTeacherCanAccessStudent,
+  classListWhere,
+  resolveClassId,
+  resolveSubjectCode,
+} from "@/lib/teacher-scope";
 
 export const dynamic = "force-dynamic";
 
-/** GET /api/teacher/tiers?subject=&classId= —— 分层升降候选（AI 理由，未配 Key 时模板兜底） */
+/** GET /api/teacher/tiers?subject=&classId= —— 分层升降候选（AI 理由，未配 Key 时模板兜底）
+ * 班主任限本班、科目教师限本学科（resolve 助手强制） */
 export async function GET(req: NextRequest) {
   try {
-    await requireApiUser(["TEACHER", "ADMIN"]);
+    const session = await requireApiUser(["TEACHER", "ADMIN"]);
     const sp = req.nextUrl.searchParams;
-    const subjectCode = sp.get("subject") ?? "math";
+    const subjectCode = resolveSubjectCode(session.user, sp.get("subject")) ?? "math";
     const subject = await prisma.subject.findUnique({ where: { code: subjectCode } });
     if (!subject) return ok({ error: "科目不存在" }, 404);
 
-    const classes = await prisma.class.findMany({ orderBy: { name: "asc" } });
-    const cls = sp.get("classId")
-      ? classes.find((c) => c.id === sp.get("classId"))
-      : classes[0];
+    const classes = await prisma.class.findMany({
+      where: classListWhere(session.user),
+      orderBy: { name: "asc" },
+    });
+    const classId = resolveClassId(session.user, sp.get("classId"));
+    const cls = classId ? classes.find((c) => c.id === classId) : classes[0];
     if (!cls) return ok({ error: "没有班级数据" }, 404);
 
     const items = await suggestTierChanges({ subjectId: subject.id, classId: cls.id });
@@ -80,10 +90,12 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/** POST /api/teacher/tiers —— 一键采纳/清除分层锁定 { items: [{ studentId, tier | null }] } */
+/** POST /api/teacher/tiers —— 一键采纳/清除分层锁定 { items: [{ studentId, tier | null }] }
+ * 班主任限本班学生；科目教师 403 */
 export async function POST(req: NextRequest) {
   try {
-    await requireApiUser(["TEACHER", "ADMIN"]);
+    const session = await requireApiUser(["TEACHER", "ADMIN"]);
+    assertNotSubjectTeacher(session.user, "科目教师无权锁定分层");
     const body = await req.json().catch(() => ({}));
     const items = body?.items;
     if (!Array.isArray(items) || !items.length) return ok({ error: "items 不能为空" }, 400);
@@ -97,16 +109,17 @@ export async function POST(req: NextRequest) {
         return ok({ error: `非法分层值：${i.tier}` }, 400);
     }
 
-    // 预读学生（事务外），校验存在且为学生
+    // 预读学生（事务外），校验存在且为学生；班主任校验目标学生均在本班
     const students = await prisma.user.findMany({
       where: { id: { in: valid.map((i) => i.studentId) } },
-      select: { id: true, role: true },
+      select: { id: true, role: true, classId: true },
     });
     const byId = new Map(students.map((s) => [s.id, s]));
     for (const i of valid) {
       const s = byId.get(i.studentId);
       if (!s) return ok({ error: `学生不存在：${i.studentId}` }, 404);
       if (s.role !== Role.STUDENT) return ok({ error: `不是学生账号：${i.studentId}` }, 400);
+      assertTeacherCanAccessStudent(session.user, s);
     }
 
     // 批量事务（Neon Pooled 禁交互式事务）

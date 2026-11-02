@@ -4,17 +4,27 @@ import { requireApiUser } from "@/lib/auth";
 import { llmConfigured, llmJson } from "@/lib/llm";
 import { LECTURE_SYSTEM, lectureContext } from "@/lib/prompts";
 import { buildLectureData, buildLectureFallback, type LectureItem } from "@/lib/lecture";
+import { prisma } from "@/lib/prisma";
+import { assertTeacherCanAccessAssignment } from "@/lib/teacher-scope";
 
 export const dynamic = "force-dynamic";
 
 /** POST /api/ai/lecture —— 课堂讲评要点：{assignmentId, questionId?}
- * 无 Key / LLM 失败时模板兜底（基于真实统计），永远返回 200；aiGenerated 标识是否 AI 生成 */
+ * 无 Key / LLM 失败时模板兜底（基于真实统计），永远返回 200；aiGenerated 标识是否 AI 生成
+ * 权限：班主任限本班、科目教师限本学科（越界 403） */
 export async function POST(req: NextRequest) {
   try {
-    await requireApiUser(["TEACHER", "ADMIN"]);
+    const session = await requireApiUser(["TEACHER", "ADMIN"]);
     const body = await req.json().catch(() => ({}));
     const assignmentId = String(body?.assignmentId ?? "");
     if (!assignmentId) return ok({ error: "缺少 assignmentId" }, 400);
+
+    const assignment = await prisma.assignment.findUnique({
+      where: { id: assignmentId },
+      select: { classId: true, subjectId: true },
+    });
+    if (!assignment) return ok({ error: "作业不存在" }, 404);
+    assertTeacherCanAccessAssignment(session.user, assignment);
 
     const data = await buildLectureData(assignmentId);
     if (!data) return ok({ error: "作业不存在" }, 404);
@@ -55,10 +65,12 @@ export async function POST(req: NextRequest) {
         );
         if (Array.isArray(g.items) && g.items.length) {
           const fallbackById = new Map(items.map((i) => [i.questionId, i]));
+          let matched = 0;
           items = targets.map((q) => {
             const ai = g.items.find((i) => i?.questionId === q.id);
             const fb = fallbackById.get(q.id)!;
             if (!ai) return fb;
+            matched++;
             return {
               questionId: q.id,
               angle: typeof ai.angle === "string" && ai.angle.trim() ? ai.angle.trim() : fb.angle,
@@ -68,7 +80,8 @@ export async function POST(req: NextRequest) {
               variant: typeof ai.variant === "string" && ai.variant.trim() ? ai.variant.trim() : fb.variant,
             };
           });
-          aiGenerated = true;
+          // 至少一道题真正匹配到 AI 条目才算 AI 生成；全未匹配保持模板（避免把模板标成 AI 生成）
+          aiGenerated = matched > 0;
         }
       } catch (e) {
         console.warn("[ai/lecture] AI 生成失败，使用模板兜底:", e);

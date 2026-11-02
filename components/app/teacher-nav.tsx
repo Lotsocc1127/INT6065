@@ -27,18 +27,29 @@ const LINKS: { href: string; label: string; icon: LucideIcon }[] = [
 export function TeacherNav() {
   const pathname = usePathname();
   // 管理员也会进 /teacher 预览（见 app/(teacher)/teacher/layout.tsx），需给他一条回管理端的路
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const isAdmin = session?.user?.role === "ADMIN";
+  // 科目教师不处理目标申诉（服务端 403），徽章只统计作业待复核
+  const isSubjectTeacher = Boolean(session?.user?.subjectId);
   // 待复核数量徽章 = 作业待复核 + 目标申诉（两个队列在 /teacher/review 同页展示）
   const [reviewCount, setReviewCount] = useState(0);
   useEffect(() => {
+    // 会话未就绪时不发请求：科目教师身份未知时会先以默认分支打一发 403（StrictMode 还会双发）
+    if (status === "loading") return;
+    if (isSubjectTeacher) {
+      fetch("/api/review-queue?countOnly=1")
+        .then((r) => r.json())
+        .then((a) => setReviewCount(Number(a.count) || 0))
+        .catch(() => {});
+      return;
+    }
     Promise.all([
       fetch("/api/review-queue?countOnly=1").then((r) => r.json()).catch(() => ({})),
       fetch("/api/teacher/appeals?countOnly=1").then((r) => r.json()).catch(() => ({})),
     ]).then(([a, b]) =>
       setReviewCount((Number(a.count) || 0) + (Number(b.count) || 0))
     );
-  }, [pathname]);
+  }, [pathname, isSubjectTeacher, status]);
   return (
     <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
       <div className="mx-auto max-w-7xl px-4 md:px-6">

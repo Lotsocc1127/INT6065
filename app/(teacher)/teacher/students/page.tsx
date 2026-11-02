@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 import { KeyRound, Plus, UserMinus } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +50,9 @@ interface StudentRow {
 }
 
 export default function TeacherStudentsPage() {
+  const { data: session } = useSession();
+  // 科目教师只读：隐藏增/改/删入口（服务端同样 403，此处避免死端 UI）
+  const isSubjectTeacher = Boolean(session?.user?.subjectId);
   const [classes, setClasses] = useState<ClassInfo[]>([]);
   const [classId, setClassId] = useState("");
   const [students, setStudents] = useState<StudentRow[] | null>(null);
@@ -173,6 +177,7 @@ export default function TeacherStudentsPage() {
           <CardTitle>学生管理</CardTitle>
           <CardDescription>
             管理所选班级的学生账号：添加学生、重置密码、移出班级（移出后历史作答记录保留，学生端不再显示本班内容）。
+            {isSubjectTeacher ? "科目教师为只读视图，无权添加/重置/移出学生。" : ""}
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-4">
@@ -197,32 +202,36 @@ export default function TeacherStudentsPage() {
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="new-name">学生姓名</Label>
-            <Input
-              id="new-name"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="如：钱小明"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="new-password">初始密码（留空则 123456，4–32 位）</Label>
-            <Input
-              id="new-password"
-              type="password"
-              value={newPassword}
-              maxLength={32}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="默认 123456"
-            />
-          </div>
-          <div className="flex items-end">
-            <Button onClick={addStudent} disabled={adding} className="gap-1">
-              <Plus className="h-4 w-4" />
-              {adding ? "添加中…" : "添加学生"}
-            </Button>
-          </div>
+          {!isSubjectTeacher && (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="new-name">学生姓名</Label>
+                <Input
+                  id="new-name"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="如：钱小明"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="new-password">初始密码（留空则 123456，4–32 位）</Label>
+                <Input
+                  id="new-password"
+                  type="password"
+                  value={newPassword}
+                  maxLength={32}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="默认 123456"
+                />
+              </div>
+              <div className="flex items-end">
+                <Button onClick={addStudent} disabled={adding} className="gap-1">
+                  <Plus className="h-4 w-4" />
+                  {adding ? "添加中…" : "添加学生"}
+                </Button>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 
@@ -251,29 +260,33 @@ export default function TeacherStudentsPage() {
                       <Badge variant="outline">{s.goalCount} 个目标</Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="gap-1"
-                          onClick={() => {
-                            setResetTarget(s);
-                            setResetPassword("");
-                          }}
-                        >
-                          <KeyRound className="h-3.5 w-3.5" />
-                          重置密码
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="gap-1 text-destructive"
-                          onClick={() => setRemoveTarget(s)}
-                        >
-                          <UserMinus className="h-3.5 w-3.5" />
-                          移出班级
-                        </Button>
-                      </div>
+                      {isSubjectTeacher ? (
+                        <span className="text-xs text-muted-foreground">只读</span>
+                      ) : (
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1"
+                            onClick={() => {
+                              setResetTarget(s);
+                              setResetPassword("");
+                            }}
+                          >
+                            <KeyRound className="h-3.5 w-3.5" />
+                            重置密码
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="gap-1 text-destructive"
+                            onClick={() => setRemoveTarget(s)}
+                          >
+                            <UserMinus className="h-3.5 w-3.5" />
+                            移出班级
+                          </Button>
+                        </div>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

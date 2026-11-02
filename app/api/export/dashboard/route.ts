@@ -6,17 +6,21 @@ import { aggregateDashboard } from "@/lib/dashboard";
 import { fillSheet, xlsxResponse } from "@/lib/export";
 import { TIER_META } from "@/lib/mastery";
 import { pct } from "@/lib/utils";
+import { getTeacherScope, resolveClassId, resolveSubjectCode } from "@/lib/teacher-scope";
 
 export const dynamic = "force-dynamic";
 
-/** GET /api/export/dashboard?subject=&classId= —— 班级看板 Excel 导出（与看板接口同口径，见 lib/dashboard.ts） */
+/** GET /api/export/dashboard?subject=&classId= —— 班级看板 Excel 导出（与看板接口同口径，见 lib/dashboard.ts）
+ * 权限与看板一致：班主任限本班、科目教师限本学科 */
 export async function GET(req: NextRequest) {
   try {
-    await requireApiUser(["TEACHER", "ADMIN"]);
+    const session = await requireApiUser(["TEACHER", "ADMIN"]);
     const sp = req.nextUrl.searchParams;
+    const scope = getTeacherScope(session.user);
     const res = await aggregateDashboard({
-      subjectCode: sp.get("subject") ?? "math",
-      classId: sp.get("classId") ?? undefined,
+      subjectCode: resolveSubjectCode(session.user, sp.get("subject")) ?? "math",
+      classId: resolveClassId(session.user, sp.get("classId")),
+      visibleClassIds: scope?.headTeacherClassId ? [scope.headTeacherClassId] : undefined,
     });
     if (!res.ok) return ok({ error: res.error }, 404);
     const d = res.dto;

@@ -63,11 +63,13 @@ function DashboardInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const subject = searchParams.get("subject") ?? "math";
+  const subjectParam = searchParams.get("subject");
+  const [subjects, setSubjects] = useState<SubjectInfo[]>([]);
+  // URL 未带 ?subject 时，缺省取可见科目列表第一项（科目教师只能看到本学科，直接写死 "math" 会 403）
+  const subject = subjectParam ?? (subjects.length ? subjects[0].code : "math");
   // 班级同样从 URL 派生（与 subject 一致）：若存成本地 state，Select 的 onValueChange
   // 只 push 了 query 而不改 state，取数 effect 不会重跑，下拉会回弹到原班级
   const classId = searchParams.get("classId") ?? "";
-  const [subjects, setSubjects] = useState<SubjectInfo[]>([]);
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState("");
   const [tierFilter, setTierFilter] = useState<"all" | Tier>("all");
@@ -83,6 +85,8 @@ function DashboardInner() {
   }, []);
 
   useEffect(() => {
+    // 科目列表未就绪时不发请求，避免缺省科目（如英语老师）先以 "math" 打一发 403
+    if (!subjects.length) return;
     setData(null);
     setError("");
     const params = new URLSearchParams({ subject });
@@ -94,7 +98,7 @@ function DashboardInner() {
         setData(j);
       })
       .catch((e) => setError(e.message));
-  }, [subject, classId, refreshKey]);
+  }, [subject, classId, refreshKey, subjects]);
 
   // 热力图行：按分层筛选 + 平均掌握度升序（ECharts y 轴类目索引 0 渲染在底部，故薄弱学生靠下）
   const displayStudents = useMemo(() => {

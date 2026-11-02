@@ -6,6 +6,7 @@ import { parseArr } from "@/lib/json";
 import { SUBMISSION_ANALYSIS_SYSTEM } from "@/lib/prompts";
 import { prisma } from "@/lib/prisma";
 import { formatStudent } from "@/lib/utils";
+import { assertTeacherCanAccessAssignment } from "@/lib/teacher-scope";
 
 export const dynamic = "force-dynamic";
 
@@ -15,19 +16,25 @@ const TYPE_LABEL: Record<string, string> = {
   OPEN_RESPONSE: "解答题",
 };
 
-/** POST /api/ai/submission-analysis —— 单次作业个性化分析（7.8）：{submissionId} */
+/** POST /api/ai/submission-analysis —— 单次作业个性化分析（7.8）：{submissionId}
+ * 权限：班主任限本班、科目教师限本学科（越界 403） */
 export async function POST(req: NextRequest) {
   try {
-    await requireApiUser(["TEACHER", "ADMIN"]);
+    const session = await requireApiUser(["TEACHER", "ADMIN"]);
     const body = await req.json();
     const submissionId = String(body?.submissionId ?? "");
     if (!submissionId) return ok({ error: "缺少 submissionId" }, 400);
 
     const submission = await prisma.submission.findUnique({
       where: { id: submissionId },
-      include: { student: true, answers: true },
+      include: {
+        student: true,
+        answers: true,
+        assignment: { select: { classId: true, subjectId: true } },
+      },
     });
     if (!submission) return ok({ error: "作答不存在" }, 404);
+    assertTeacherCanAccessAssignment(session.user, submission.assignment);
 
     const questions = await prisma.question.findMany({
       where: { id: { in: submission.answers.map((a) => a.questionId) } },

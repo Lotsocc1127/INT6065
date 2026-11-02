@@ -5,6 +5,11 @@ import { requireApiUser } from "@/lib/auth";
 import { toArrStr } from "@/lib/json";
 import { resolveChoiceLetter } from "@/lib/utils";
 import { prisma } from "@/lib/prisma";
+import {
+  assertTeacherCanAccessAssignment,
+  getTeacherScope,
+  resolveSubjectCode,
+} from "@/lib/teacher-scope";
 
 export const dynamic = "force-dynamic";
 
@@ -27,17 +32,20 @@ interface GeneratedQuestion {
   tier?: string | null;
 }
 
-/** GET /api/assignments —— 作业列表（教师：全部；学生：本班 + 自己的提交状态） */
+/** GET /api/assignments —— 作业列表（教师：按绑定范围——班主任本班/科目教师本学科/未绑定全量；学生：本班 + 自己的提交状态） */
 export async function GET(req: NextRequest) {
   try {
     const session = await requireApiUser();
     const sp = req.nextUrl.searchParams;
-    const subjectCode = sp.get("subject") ?? undefined;
+    const subjectCode = resolveSubjectCode(session.user, sp.get("subject"));
     const subject = subjectCode ? await prisma.subject.findUnique({ where: { code: subjectCode } }) : null;
+    const scope = getTeacherScope(session.user);
 
     const where = {
       ...(subject ? { subjectId: subject.id } : {}),
       ...(session.user.role === "STUDENT" ? { classId: session.user.classId ?? "" } : {}),
+      ...(scope?.headTeacherClassId ? { classId: scope.headTeacherClassId } : {}),
+      ...(scope?.subjectId ? { subjectId: scope.subjectId } : {}),
     };
 
     const assignments = await prisma.assignment.findMany({
@@ -85,10 +93,11 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/** POST /api/assignments —— 布置作业：可传已有题目 id，或传 AI 生成的题目（服务端入库） */
+/** POST /api/assignments —— 布置作业：可传已有题目 id，或传 AI 生成的题目（服务端入库）
+ * 权限：班主任限本班、科目教师限本学科（越界 403） */
 export async function POST(req: NextRequest) {
   try {
-    await requireApiUser(["TEACHER", "ADMIN"]);
+    const session = await requireApiUser(["TEACHER", "ADMIN"]);
     const body = await req.json();
     const { title, type, subjectId, classId, dueAt, questionIds, questions } = body as {
       title?: string;
@@ -101,6 +110,16 @@ export async function POST(req: NextRequest) {
     };
     if (!title || !subjectId || !classId) return ok({ error: "缺少标题/科目/班级" }, 400);
     if (!questionIds?.length && !questions?.length) return ok({ error: "至少选择一道题" }, 400);
+
+    // 存在性校验（原先缺失，FK 失败会裸 500）
+    const [subject, cls] = await Promise.all([
+      prisma.subject.findUnique({ where: { id: subjectId } }),
+      prisma.class.findUnique({ where: { id: classId } }),
+    ]);
+    if (!subject) return ok({ error: "科目不存在" }, 400);
+    if (!cls) return ok({ error: "班级不存在" }, 400);
+    // 教师绑定范围校验（班主任限本班；科目教师限本学科；未绑定/ADMIN 放行）
+    assertTeacherCanAccessAssignment(session.user, { classId, subjectId });
 
     const assignmentType = type === "QUIZ" ? AssignmentType.QUIZ : AssignmentType.HOMEWORK;
 
@@ -159,20 +178,25 @@ export async function POST(req: NextRequest) {
         },
       },
     });
-    // 通知：新作业 → 该班全体学生（单条批量语句，Pooled 安全）
-    const students = await prisma.user.findMany({
-      where: { role: Role.STUDENT, classId },
-      select: { id: true },
-    });
-    await prisma.notification.createMany({
-      data: students.map((s) => ({
-        userId: s.id,
-        type: "assignment",
-        title: "新作业布置",
-        body: `「${title}」已布置，请按时完成`,
-        link: `/student/assignments/${assignment.id}`,
-      })),
-    });
+    // 通知：新作业 → 该班全体学生。best-effort：作业已落库，通知失败只告警不 500
+    // （此前通知失败会返回 500，教师重试会重复建作业）
+    try {
+      const students = await prisma.user.findMany({
+        where: { role: Role.STUDENT, classId },
+        select: { id: true },
+      });
+      await prisma.notification.createMany({
+        data: students.map((s) => ({
+          userId: s.id,
+          type: "assignment",
+          title: "新作业布置",
+          body: `「${title}」已布置，请按时完成`,
+          link: `/student/assignments/${assignment.id}`,
+        })),
+      });
+    } catch (e) {
+      console.warn("[assignments] 学生通知投递失败（作业已创建）", e);
+    }
     return ok({ id: assignment.id }, 201);
   } catch (e) {
     return fail(e);

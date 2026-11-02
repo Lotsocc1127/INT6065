@@ -4,17 +4,18 @@ import { fail, ok } from "@/lib/api";
 import { requireApiUser } from "@/lib/auth";
 import { parseArr } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
+import { resolveSubjectCode } from "@/lib/teacher-scope";
 
 export const dynamic = "force-dynamic";
 
-/** GET /api/questions?subject=&kp=&difficulty=&type=&q= —— 题库浏览（教师端，含答案） */
+/** GET /api/questions?subject=&kp=&difficulty=&type=&q= —— 题库浏览（教师端，含答案）
+ * 科目教师强制本学科（显式越界 403） */
 export async function GET(req: NextRequest) {
   try {
     const session = await requireApiUser(["TEACHER", "ADMIN"]);
-    void session;
     const sp = req.nextUrl.searchParams;
     const where: Prisma.QuestionWhereInput = {};
-    const subjectCode = sp.get("subject");
+    const subjectCode = resolveSubjectCode(session.user, sp.get("subject"));
     if (subjectCode) {
       const subject = await prisma.subject.findUnique({ where: { code: subjectCode } });
       if (subject) where.subjectId = subject.id;

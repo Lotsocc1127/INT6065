@@ -89,6 +89,8 @@ export default function WeeklyReportPage() {
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<ReportText | null>(null);
   const [stats, setStats] = useState<WeeklyStats | null>(null);
+  // 已生成周报的参数快照：导出按快照（而非切换器当前值），避免「屏幕看 A 班、导出 B 班」
+  const [generatedFor, setGeneratedFor] = useState<{ subject: string; classId: string } | null>(null);
 
   useEffect(() => {
     fetch("/api/subjects")
@@ -123,6 +125,7 @@ export default function WeeklyReportPage() {
       if (!r.ok) throw new Error(j.error ?? "生成失败");
       setReport(j.report as ReportText);
       setStats(j.stats as WeeklyStats);
+      setGeneratedFor({ subject, classId });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "生成失败");
     } finally {
@@ -230,8 +233,10 @@ export default function WeeklyReportPage() {
                 variant="outline"
                 onClick={async () => {
                   try {
-                    const params = new URLSearchParams({ subject });
-                    if (classId) params.set("classId", classId);
+                    // 按已生成快照导出，保证 xlsx 与屏幕上审阅的周报一致
+                    const src = generatedFor ?? { subject, classId };
+                    const params = new URLSearchParams({ subject: src.subject });
+                    if (src.classId) params.set("classId", src.classId);
                     await downloadXlsx(`/api/export/weekly-report?${params.toString()}`, "学情周报.xlsx");
                   } catch (e) {
                     toast.error(e instanceof Error ? e.message : "导出失败");
@@ -243,6 +248,13 @@ export default function WeeklyReportPage() {
               </Button>
             )}
           </div>
+          {report && generatedFor && (subject !== generatedFor.subject || classId !== generatedFor.classId) && (
+            <p className="flex items-center gap-1 text-sm text-amber-600 md:col-span-3">
+              <AlertTriangle className="h-4 w-4" />
+              选择器已变更：当前展示的是 {subjects.find((s) => s.code === generatedFor.subject)?.name} ·{" "}
+              {classes.find((c) => c.id === generatedFor.classId)?.name} 的周报（导出同样按已生成版本）。请重新生成以查看最新选择。
+            </p>
+          )}
         </CardContent>
       </Card>
 

@@ -2,8 +2,9 @@ import { NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api";
 import { requireApiUser } from "@/lib/auth";
 import { goalDto } from "@/lib/goals";
-import { findTeacherIds, notificationOps } from "@/lib/notifications";
+import { findTeacherIdsFor, notificationOps } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
+import { formatStudent } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -39,13 +40,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           appealResolvedBy: null,
         },
       });
-      // 通知：新申诉 → 全体教师（申诉队列在教师端 /teacher/review）
-      const teacherIds = await findTeacherIds();
+      // 通知：新申诉 → 本班班主任 ∪ 未绑定教师（目标无学科归属，科目教师不通知；申诉队列在教师端 /teacher/review）
+      const [student, teacherIds] = await Promise.all([
+        prisma.user.findUnique({ where: { id: session.user.id }, select: { studentNo: true } }),
+        findTeacherIdsFor({ classId: session.user.classId ?? undefined }),
+      ]);
       if (teacherIds.length) {
         await notificationOps(teacherIds, {
           type: "appeal_filed",
           title: "新的目标申诉",
-          body: `「${session.user.name}」对目标「${goal.content.slice(0, 50)}」提出申诉`,
+          body: `「${formatStudent(session.user.name ?? "学生", student?.studentNo)}」对目标「${goal.content.slice(0, 50)}」提出申诉`,
           link: "/teacher/review",
         });
       }

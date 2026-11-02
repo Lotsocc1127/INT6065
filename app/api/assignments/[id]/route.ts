@@ -5,11 +5,12 @@ import { parseArr } from "@/lib/json";
 import { studentTierOf } from "@/lib/grading";
 import { loadTeacherSubmissions } from "@/lib/assignment-detail";
 import { prisma } from "@/lib/prisma";
+import { assertTeacherCanAccessAssignment } from "@/lib/teacher-scope";
 
 export const dynamic = "force-dynamic";
 
 /** GET /api/assignments/:id —— 作业详情
- * 教师：全部提交与批改；学生：题目（提交后可见答案/解析）+ 自己的批改结果 */
+ * 教师：全部提交与批改（按绑定范围：班主任本班/科目教师本学科，越界 403）；学生：题目（提交后可见答案/解析）+ 自己的批改结果 */
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const session = await requireApiUser();
@@ -27,6 +28,12 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       session.user.classId !== assignment.classId
     ) {
       return ok({ error: "该作业不属于你所在的班级" }, 403);
+    }
+    if (session.user.role !== "STUDENT") {
+      assertTeacherCanAccessAssignment(session.user, {
+        classId: assignment.classId,
+        subjectId: assignment.subjectId,
+      });
     }
 
     const mySubmission =
