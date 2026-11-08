@@ -432,7 +432,8 @@ export async function generateDemoCycle(opts?: { seed?: number }): Promise<DemoS
         for (const { q } of visible) {
           const kpIds = parseArr(q.kpIds as string);
           const kpMastery = Math.max(...kpIds.map((id) => stuMap.get(id) ?? 0.3), 0.1);
-          const correct = rnd() < clamp(kpMastery * 0.95, 0.05, 0.98);
+          // 演示周期要体现"教学后提升"：正确率略高于当前掌握度，而不是围着它小幅回落
+          const correct = rnd() < clamp(kpMastery * 0.9 + 0.1, 0.05, 0.99);
           const isOpen = q.type === "OPEN_RESPONSE";
           const qOpts = q.options ? parseArr<string>(q.options as string) : [];
 
