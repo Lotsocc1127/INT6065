@@ -16,7 +16,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { SubjectSwitcher, type SubjectInfo } from "@/components/app/subject-switcher";
-import { fmtDate } from "@/lib/utils";
+import { choiceAnswerText, fmtDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -164,8 +164,18 @@ function WrongBook() {
                     <CardTitle className="text-sm font-normal leading-relaxed">{w.stem}</CardTitle>
                     {w.lastResponse ? (
                       <CardDescription>
-                        我的作答：<span className="text-red-500">{w.lastResponse}</span>
-                        <span className="ml-2">正解：{w.answer}</span>
+                        我的作答：
+                        <span className="text-red-500">
+                          {w.type === "SINGLE_CHOICE"
+                            ? choiceAnswerText(w.options, w.lastResponse)
+                            : w.lastResponse}
+                        </span>
+                        <span className="ml-2">
+                          正解：
+                          {w.type === "SINGLE_CHOICE"
+                            ? choiceAnswerText(w.options, w.answer)
+                            : w.answer}
+                        </span>
                       </CardDescription>
                     ) : null}
                   </div>

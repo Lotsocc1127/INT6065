@@ -240,7 +240,13 @@ export default function StudentAssignmentPage({ params }: { params: { id: string
                   <div className="text-muted-foreground">{q.stem}</div>
                   <div className="mt-1.5">
                     <span className="font-medium">我的作答：</span>
-                    <span className={a?.isCorrect === false ? "text-red-600" : ""}>{a?.response || "（空）"}</span>
+                    <span className={a?.isCorrect === false ? "text-red-600" : ""}>
+                      {a?.response
+                        ? q.type === "SINGLE_CHOICE"
+                          ? choiceAnswerText(q.options, a.response)
+                          : a.response
+                        : "（空）"}
+                    </span>
                   </div>
                   {q.answer ? (
                     <div className="mt-1 text-xs text-muted-foreground">
