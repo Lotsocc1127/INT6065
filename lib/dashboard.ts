@@ -45,28 +45,59 @@ export async function aggregateDashboard(opts: {
   /** 可见班级白名单（班主任权限）：过滤 DTO 的 classes 并拦截越界 classId */
   visibleClassIds?: string[];
 }): Promise<DashboardResult> {
-  const subject = await prisma.subject.findUnique({ where: { code: opts.subjectCode } });
+  // 互不依赖的查询并行：科目 + 班级（4 个并发以内，Neon Pooled 可承受）
+  const [subject, allClasses] = await Promise.all([
+    prisma.subject.findUnique({
+      where: { code: opts.subjectCode },
+      select: { id: true, code: true, name: true },
+    }),
+    prisma.class.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+  ]);
   if (!subject) return { ok: false, error: "科目不存在" };
 
-  const allClasses = await prisma.class.findMany({ orderBy: { name: "asc" } });
   const classes = opts.visibleClassIds
     ? allClasses.filter((c) => opts.visibleClassIds!.includes(c.id))
     : allClasses;
   const cls = opts.classId ? classes.find((c) => c.id === opts.classId) : classes[0];
   if (!cls) return { ok: false, error: "没有班级数据" };
 
-  const kps = await prisma.knowledgePoint.findMany({
-    where: { subjectId: subject.id },
-    orderBy: { code: "asc" },
-  });
-  const students = await prisma.user.findMany({
-    where: { role: Role.STUDENT, classId: cls.id },
-    orderBy: { name: "asc" },
-  });
+  const [kps, students] = await Promise.all([
+    prisma.knowledgePoint.findMany({
+      where: { subjectId: subject.id },
+      orderBy: { code: "asc" },
+      select: { id: true, code: true, name: true },
+    }),
+    // 只取看板需要的字段：不要整行 User（含密码哈希）回传
+    prisma.user.findMany({
+      where: { role: Role.STUDENT, classId: cls.id },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, studentNo: true, tierOverride: true },
+    }),
+  ]);
+  const studentIds = students.map((s) => s.id);
 
-  const masteries = await prisma.mastery.findMany({
-    where: { subjectId: subject.id, studentId: { in: students.map((s) => s.id) } },
-  });
+  // 依赖 students/subject/class 的四条查询并行
+  const [masteries, assignments, points, records] = await Promise.all([
+    prisma.mastery.findMany({
+      where: { subjectId: subject.id, studentId: { in: studentIds } },
+      select: { studentId: true, kpId: true, value: true },
+    }),
+    prisma.assignment.findMany({
+      where: { subjectId: subject.id, classId: cls.id },
+      select: { id: true, _count: { select: { submissions: true } } },
+    }),
+    // 趋势只需要 value/at；按时间升序供按天分桶
+    prisma.masteryPoint.findMany({
+      where: { mastery: { subjectId: subject.id, studentId: { in: studentIds } } },
+      orderBy: { at: "asc" },
+      select: { value: true, at: true },
+    }),
+    prisma.answerRecord.findMany({
+      where: { studentId: { in: studentIds }, question: { subjectId: subject.id } },
+      select: { errorTags: true },
+    }),
+  ]);
+
   const masteryByStudent = new Map<string, Map<string, number>>();
   for (const m of masteries) {
     if (!masteryByStudent.has(m.studentId)) masteryByStudent.set(m.studentId, new Map());
@@ -99,21 +130,13 @@ export async function aggregateDashboard(opts: {
   };
   for (const r of studentRows) tiers[r.tier].push({ id: r.id, name: r.name, studentNo: r.studentNo });
 
-  const assignments = await prisma.assignment.findMany({
-    where: { subjectId: subject.id, classId: cls.id },
-    include: { _count: { select: { submissions: true } } },
-  });
   // 空班级（无学生）时提交率为 0，避免 0/0 产生 NaN/Infinity 进入看板与导出
   const submissionRate =
     assignments.length && students.length
       ? avg(assignments.map((a) => a._count.submissions / students.length))
       : 0;
 
-  // 班级掌握度趋势：按天聚合全部 MasteryPoint 历史
-  const points = await prisma.masteryPoint.findMany({
-    where: { mastery: { subjectId: subject.id, studentId: { in: students.map((s) => s.id) } } },
-    orderBy: { at: "asc" },
-  });
+  // 班级掌握度趋势：按天聚合 MasteryPoint 历史
   const dayBuckets = new Map<string, number[]>();
   for (const p of points) {
     const d = new Date(p.at);
@@ -125,10 +148,6 @@ export async function aggregateDashboard(opts: {
   const trendDelta = trend.length >= 2 ? trend[trend.length - 1].avg - trend[0].avg : 0;
 
   // 高频错因：全班该科目 AnswerRecord.errorTags 聚合
-  const records = await prisma.answerRecord.findMany({
-    where: { studentId: { in: students.map((s) => s.id) }, question: { subjectId: subject.id } },
-    select: { errorTags: true },
-  });
   const tagCount = new Map<string, number>();
   for (const r of records) {
     for (const t of parseArr(r.errorTags)) tagCount.set(t, (tagCount.get(t) ?? 0) + 1);

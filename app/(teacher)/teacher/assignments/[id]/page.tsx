@@ -337,7 +337,7 @@ export default function AssignmentDetailPage({ params }: { params: { id: string 
                         <div className="min-w-0 flex-1">
                           <div className="mb-1 flex flex-wrap items-center gap-2">
                             <span className="font-medium">
-                              第 {i + 1} 题 · {TYPE_LABEL[q?.type ?? ""] ?? "—"}
+                              第 {q?.order ?? i + 1} 题 · {TYPE_LABEL[q?.type ?? ""] ?? "—"}
                             </span>
                             {q?.tier ? (
                               <Badge className="bg-amber-100 text-amber-800">

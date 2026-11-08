@@ -248,7 +248,7 @@ function DashboardInner() {
               <CardHeader>
                 <CardTitle>学生 × 知识点 掌握度热力图</CardTitle>
                 <CardDescription>
-                  颜色深浅表示掌握程度；悬停查看具体数值。按平均掌握度降序排列，薄弱学生靠下。
+                  颜色深浅表示掌握程度；悬停查看具体数值。按平均掌握度从低到高排列（薄弱学生靠下）。
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
