@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { AlertTriangle, Download, Lock, Sparkles, Users } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -60,6 +61,7 @@ interface DashboardData {
 }
 
 function DashboardInner() {
+  const { data: session } = useSession();
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -197,7 +199,9 @@ function DashboardInner() {
 
       <QuoteCard />
 
-      <DemoDataCard onChanged={() => setRefreshKey((k) => k + 1)} />
+      {session?.user?.role === "ADMIN" ? (
+        <DemoDataCard onChanged={() => setRefreshKey((k) => k + 1)} />
+      ) : null}
 
       {error ? (
         <Card>
