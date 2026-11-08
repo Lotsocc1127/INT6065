@@ -86,11 +86,12 @@ export async function aggregateDashboard(opts: {
       where: { subjectId: subject.id, classId: cls.id },
       select: { id: true, _count: { select: { submissions: true } } },
     }),
-    // 趋势只需要 value/at；按时间升序供按天分桶
+    // 趋势需要 masteryId：按天取每个知识点"当天最新值"再平均，
+    // 不能把当天所有点混在一起平均（否则提交多的学生/知识点权重过大，曲线会跳）
     prisma.masteryPoint.findMany({
       where: { mastery: { subjectId: subject.id, studentId: { in: studentIds } } },
       orderBy: { at: "asc" },
-      select: { value: true, at: true },
+      select: { masteryId: true, value: true, at: true },
     }),
     prisma.answerRecord.findMany({
       where: { studentId: { in: studentIds }, question: { subjectId: subject.id } },
@@ -136,15 +137,27 @@ export async function aggregateDashboard(opts: {
       ? avg(assignments.map((a) => a._count.submissions / students.length))
       : 0;
 
-  // 班级掌握度趋势：按天聚合 MasteryPoint 历史
-  const dayBuckets = new Map<string, number[]>();
+  // 班级掌握度趋势：按天取每个知识点"当天最新值"，再对全班/全知识点求平均。
+  // 这样曲线末端会收敛到当前班级均值，而不是被"当天提交多的学生"拉高/拉低。
+  const dayEnd = new Map<string, number>();
   for (const p of points) {
     const d = new Date(p.at);
     const key = `${d.getMonth() + 1}/${d.getDate()}`;
-    if (!dayBuckets.has(key)) dayBuckets.set(key, []);
-    dayBuckets.get(key)!.push(p.value);
+    const end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
+    if (!dayEnd.has(key) || end > dayEnd.get(key)!) dayEnd.set(key, end);
   }
-  const trend = [...dayBuckets.entries()].map(([date, vals]) => ({ date, avg: avg(vals) }));
+  const latestByMastery = new Map<string, number>();
+  let cursor = 0;
+  const trend: { date: string; avg: number }[] = [];
+  for (const [date, end] of [...dayEnd.entries()].sort((a, b) => a[1] - b[1])) {
+    while (cursor < points.length && points[cursor].at.getTime() <= end) {
+      latestByMastery.set(points[cursor].masteryId, points[cursor].value);
+      cursor++;
+    }
+    if (latestByMastery.size) {
+      trend.push({ date, avg: avg([...latestByMastery.values()]) });
+    }
+  }
   const trendDelta = trend.length >= 2 ? trend[trend.length - 1].avg - trend[0].avg : 0;
 
   // 高频错因：全班该科目 AnswerRecord.errorTags 聚合

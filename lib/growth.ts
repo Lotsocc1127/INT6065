@@ -46,15 +46,24 @@ export async function buildGrowthSnapshot(
     .flatMap((s) => s.answers)
     .reduce((acc, a) => acc + (a.timeSpentMs ?? 0), 0);
 
-  // 按天聚合平均掌握度
-  const dayBuckets = new Map<string, number[]>();
+  // 按天取每个知识点"当天最新值"再平均：避免一天内多次提交把曲线拉跳
+  const dayEnd = new Map<string, number>();
   for (const p of points) {
     const d = new Date(p.at);
     const key = `${d.getMonth() + 1}/${d.getDate()}`;
-    if (!dayBuckets.has(key)) dayBuckets.set(key, []);
-    dayBuckets.get(key)!.push(p.value);
+    const end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
+    if (!dayEnd.has(key) || end > dayEnd.get(key)!) dayEnd.set(key, end);
   }
-  const trend = [...dayBuckets.entries()].map(([date, vals]) => ({ date, avg: avg(vals) }));
+  const latestByKp = new Map<string, number>();
+  let cursor = 0;
+  const trend: { date: string; avg: number }[] = [];
+  for (const [date, end] of [...dayEnd.entries()].sort((a, b) => a[1] - b[1])) {
+    while (cursor < points.length && points[cursor].at.getTime() <= end) {
+      latestByKp.set(points[cursor].mastery.kp.id, points[cursor].value);
+      cursor++;
+    }
+    if (latestByKp.size) trend.push({ date, avg: avg([...latestByKp.values()]) });
+  }
 
   // 每个知识点的轨迹
   const kpPoints = new Map<string, { code: string; name: string; series: { at: string; value: number }[] }>();
@@ -65,8 +74,8 @@ export async function buildGrowthSnapshot(
   }
 
   // 徽章（形成性反馈，非排名）
-  const firstAvg = avg([...dayBuckets.values()][0] ?? []);
-  const lastAvg = avg([...dayBuckets.values()].at(-1) ?? []);
+  const firstAvg = trend[0]?.avg ?? 0;
+  const lastAvg = trend.at(-1)?.avg ?? 0;
   const fullScore = submissions.some(
     (s) => s.answers.length > 0 && s.answers.every((a) => a.score === 1)
   );
