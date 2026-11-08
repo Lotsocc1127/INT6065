@@ -9,6 +9,7 @@ import { PrismaClient, QuestionType, AssignmentType, AppealStatus, Role, type Us
 import bcrypt from "bcryptjs";
 import { parseArr, toArrStr } from "../lib/json";
 import { avg, tierOf } from "../lib/mastery";
+import { resolveChoiceLetter } from "../lib/utils";
 
 const prisma = new PrismaClient();
 
@@ -545,8 +546,15 @@ async function main() {
           let response = q.answer;
           if (!correct) {
             if (q.type === QuestionType.SINGLE_CHOICE) {
+              // 注意：q.answer 是选项字母，qOpts 是选项文本，不能拿两者直接过滤。
+              // 先把标准答案归一化成字母，再从「错误字母」里抽，否则会抽到正确选项文本、
+              // 出现「作答 3（正确选项的文本）却被判错」的脏数据。
               const qOpts = parseArr<string>(q.options);
-              response = pick(qOpts.filter((o) => o !== q.answer)) ?? "（空）";
+              const expected = resolveChoiceLetter(qOpts, q.answer);
+              const wrongLetters = qOpts
+                .map((_, i) => String.fromCharCode(65 + i))
+                .filter((l) => l !== expected);
+              response = pick(wrongLetters.length ? wrongLetters : ["（空）"]);
             } else {
               response = String(Number(q.answer) + pick([-1, 1, 2, -2, 3])).trim();
             }
@@ -636,8 +644,9 @@ async function main() {
         stems: mathStems,
         students: classStudents,
         masteryMap: mathMasteryMap,
-        // 分层演示：前 2 题基础层、中 2 题提升层、末题拓展层
-        tierByIndex: ["foundation", "foundation", "intermediate", "intermediate", "advanced"],
+        // 分层演示：2 道全体公共题 + 基础/提升/拓展各 1 道。
+        // 不要把所有题都绑层级——否则每层只看到 2 题、拓展层只看到 1 题。
+        tierByIndex: [null, null, "foundation", "intermediate", "advanced"],
       }),
       await seedDemoAssignment({
         subjectId: chinese.id,

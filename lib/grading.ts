@@ -75,9 +75,12 @@ export function normalizeResponse(s: string): string {
 /** 客观题（选择/填空）确定性判分 */
 export function gradeObjective(question: Question, response: string): { isCorrect: boolean } {
   if (question.type === "SINGLE_CHOICE") {
-    // 答案可能存的是选项文本（AI 生成），先归一化为选项字母再与学生作答比较
-    const expected = resolveChoiceLetter(parseArr(question.options), question.answer);
-    return { isCorrect: response.trim().toUpperCase() === expected.toUpperCase() };
+    // 标准答案与学生作答都归一化为选项字母再比较：
+    // 标准答案可能是选项文本（AI 生成），学生作答也可能来自旧数据（文本而非字母）。
+    const options = parseArr<string>(question.options);
+    const expected = resolveChoiceLetter(options, question.answer);
+    const got = resolveChoiceLetter(options, response);
+    return { isCorrect: got.toUpperCase() === expected.toUpperCase() };
   }
   const accepts = question.answer.split("|").map(normalizeResponse);
   return { isCorrect: accepts.includes(normalizeResponse(response)) };
