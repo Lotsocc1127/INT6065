@@ -43,6 +43,7 @@ export async function POST(req: NextRequest) {
 
     const subject = await prisma.subject.findUnique({ where: { code: subjectCode } });
     if (!subject) return ok({ error: "科目不存在" }, 404);
+    const subjectName = subject.name;
     const kps = await prisma.knowledgePoint.findMany({
       where: {
         subjectId: subject.id,
@@ -52,33 +53,56 @@ export async function POST(req: NextRequest) {
     });
     if (!kps.length) return ok({ error: "没有可选知识点" }, 400);
 
-    const result = await llmJson<{
-      questions: {
-        stem: string;
-        type: string;
-        options: string[] | null;
-        answer: string;
-        analysis: string;
-        kpCode: string;
-        difficulty: number;
-      }[];
-    }>(
-      [
-        {
-          role: "system",
-          content: homeworkPrompt({
-            subjectName: subject.name,
-            kps: kps.map((k) => ({ code: k.code, name: k.name })),
-            tier,
-            count,
-          }),
-        },
-      ],
-      { maxTokens: 8192, task: "homework" }
-    );
+    type GeneratedQuestion = {
+      stem: string;
+      type: string;
+      options: string[] | null;
+      answer: string;
+      analysis: string;
+      kpCode: string;
+      difficulty: number;
+    };
+
+    async function generateBatch(n: number): Promise<GeneratedQuestion[]> {
+      const result = await llmJson<{ questions: GeneratedQuestion[] }>(
+        [
+          {
+            role: "system",
+            content: homeworkPrompt({
+              subjectName,
+              kps: kps.map((k) => ({ code: k.code, name: k.name })),
+              tier,
+              count: n,
+            }),
+          },
+        ],
+        { maxTokens: 8192, task: "homework" }
+      );
+      return Array.isArray(result?.questions) ? result.questions : [];
+    }
+
+    /**
+     * LLM 偶尔会在 max_tokens 处被截断，导致 JSON 不完整。
+     * 失败时把题数对半拆成更小的批次重试，避免整单失败。
+     */
+    async function generateWithFallback(n: number, depth = 0): Promise<GeneratedQuestion[]> {
+      try {
+        return await generateBatch(n);
+      } catch (e) {
+        if (n <= 1 || depth >= 3) throw e;
+        const first = Math.ceil(n / 2);
+        const second = n - first;
+        console.warn(`[ai/homework] ${n} 题生成失败，拆分重试：${first}+${second}`);
+        const a = await generateWithFallback(first, depth + 1);
+        const b = await generateWithFallback(second, depth + 1);
+        return [...a, ...b].slice(0, n);
+      }
+    }
+
+    const rawQuestions = await generateWithFallback(count);
 
     const kpByCode = new Map(kps.map((k) => [k.code, k]));
-    const questions = (Array.isArray(result?.questions) ? result.questions : [])
+    const questions = (Array.isArray(rawQuestions) ? rawQuestions : [])
       .filter((q) => q?.stem && q?.answer)
       // 选择题必须带选项，否则无法作答，直接丢弃（全部无效时返回 502）
       .filter((q) => q.type !== "SINGLE_CHOICE" || (Array.isArray(q.options) && q.options.length >= 2))

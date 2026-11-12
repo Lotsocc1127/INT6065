@@ -33,9 +33,10 @@ export function homeworkPrompt(opts: {
 - 所有文字一律使用普通文本字符：数学符号用 + - × ÷ = ² ³ ° ∠ √ ≤ ≥ 等普通字符，分数写作 (a+b)/c 形式。
   严禁使用 LaTeX（\\frac、\\sqrt、\\times 等反斜杠命令）、美元符号定界符（\$）、数学花体/斜体 Unicode 字符。
 - 保证题目学科内容正确、答案唯一，难度与"${tierMeta.label}"层级匹配。
-- 每题需给出标准答案与简练解析。
+- 每题需给出标准答案与简练解析；题干不超过 120 字，解析不超过 60 字，不要重复题干。
 - 每道题在输出前必须独立验算一遍：answer 必须与 analysis 中逐步计算的结果完全一致，杜绝「解析正确但答案写错」。
 - 难度用 1-5 整数表示：1-2 对应基础巩固，3 对应能力提升，4-5 对应拓展探究。
+- 只输出要求的题目数量，不要额外加题。
 ${JSON_ONLY}
 输出 JSON 结构：
 { "questions": [ { "stem": string, "type": "SINGLE_CHOICE|FILL_BLANK|OPEN_RESPONSE", "options": string[]|null, "answer": string, "analysis": string, "kpCode": string, "difficulty": 1-5 } ] }
