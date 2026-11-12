@@ -146,16 +146,27 @@ export function socratesSystem(context?: string, subjectName?: string): string {
 ${context ? `\n当前辅导上下文：\n${context}` : ""}`;
 }
 
-/** 教案 → PPT 课件：风格与配色（7.7 附加） */
-export const PREP_PPT_SYSTEM = `你是演示课件设计助手。根据用户的风格提示和可选颜色，为一份初中教案课件决定配色与一句话副标题。
-只输出 JSON：
-{ "palette": { "primary": "#RRGGBB", "accent": "#RRGGBB", "light": "#RRGGBB", "text": "#RRGGBB" }, "subtitle": "一句话中文副标题（≤20字）" }
+/** 教案 → 可直接上课的 PPT 课件（7.7 附加） */
+export const PREP_PPT_SYSTEM = `你是初中课堂课件设计师。根据教案生成一套可直接上课使用的课件页面内容。只输出 JSON：
+{
+  "deckTitle": "课程标题",
+  "subtitle": "一句话副标题（≤12字，可空）",
+  "palette": { "primary": "#RRGGBB", "accent": "#RRGGBB", "light": "#RRGGBB" },
+  "slides": [
+    { "header": "页面标题（≤14字）", "kicker": "页面标签（≤8字，如：复习引入/例1/分层练习）",
+      "blocks": [ { "title": "块标题（≤6字，如：题目/思路/解/答案）", "lines": ["一行内容（≤30字）"], "highlight": false } ],
+      "tip": "易错提醒或注意（≤24字，可空）" }
+  ]
+}
 规则：
-- primary 用于标题与顶栏（深色）；accent 用于序号与强调；light 用于浅色底（接近白/浅色）；text 为正文深色。
-- 颜色需符合风格提示（如：清新、学术、活泼、暖色、深色主题）；对比度足够；全部用 6 位 HEX。
-- 若用户给出主色/强调色，以它们为基础微调；若没有，按风格自行选择。
-- subtitle 用中文概括本课主题，不超过 20 字。
-- 不要输出 JSON 以外的任何文字。`;
+1. 面向初一学生，把教案的每个教学环节真正展开成课堂页面：热身题与答案、例题、分步解法、分层练习题与答案、归纳小结；不是把教案文字直接分页。
+2. 每页只讲一件事；blocks ≤3；每块 lines ≤5；每行 ≤30 字；总页数 ≤18（含目标、作业、结尾）。
+3. 第 1 页后先给"学习目标"页；结尾前 1-2 页是"作业与预习"。
+4. 数学用普通文本/Unicode（× ÷ ² √ π），禁止 LaTeX、Markdown（** # - \`）。
+5. 答案统一放 highlight:true 的块；练习按基础/提升/拓展分层。
+6. palette 按用户的风格提示选择（默认深青 primary、金色 accent、米白 light）；全部用 6 位 HEX。
+7. 语气鼓励、不评判。只输出 JSON，不要解释。`;
+
 /** 7.7 AI 备课助手（教师端） */
 export const PREP_SYSTEM = `你是资深初中教研员兼 AI 备课助手。基于提供的班级真实学情数据，设计一份可落地执行的教案。
 要求：

@@ -1,10 +1,15 @@
 import PptxGenJS from "pptxgenjs";
 
 /* ============================================================
- * 教案 → PPT 课件生成器（服务端，pptxgenjs）
- * 输入：AI 备课的教案 JSON + 风格/色彩/时长提示
- * 输出：16:9 PPTX 的 Uint8Array
+ * 教案 → 可直接上课的 PPT 课件（服务端，pptxgenjs）
+ * 由 LLM 把教案展开成逐页课堂内容（例题、步骤、答案、分层练习），
+ * 页面只放上课内容：无风格提示词、无生成日期、无多余页脚。
  * ============================================================ */
+
+const FONT = "Microsoft YaHei";
+const MUTED = "8B9AA8";
+const WHITE = "FFFFFF";
+const WARN = "B2503A";
 
 export interface PrepFlowStage {
   stage: string;
@@ -32,21 +37,30 @@ export interface PrepPptPalette {
   accent: string;
   light: string;
   text: string;
+}
+export interface DeckBlock {
+  title?: string;
+  lines: string[];
+  highlight?: boolean;
+}
+export interface DeckSlide {
+  header: string;
+  kicker?: string;
+  blocks: DeckBlock[];
+  tip?: string;
+  notes?: string;
+}
+export interface DeckSpec {
+  deckTitle: string;
   subtitle?: string;
+  palette?: Partial<PrepPptPalette>;
+  slides: DeckSlide[];
 }
 export interface PrepPptOptions {
-  stylePrompt?: string;
   colorPrimary?: string;
   colorAccent?: string;
-  durationMinutes?: number;
   subjectName?: string;
-  className?: string;
-  palette?: Partial<PrepPptPalette> | null;
 }
-
-const FONT = "Microsoft YaHei";
-const MUTED = "66788A";
-const CREAM = "FBF8F2";
 
 function hex(value: string | undefined | null, fallback: string): string {
   const m = /^#?([0-9a-fA-F]{6})$/.exec(value ?? "");
@@ -68,7 +82,7 @@ export function sanitizePrepInput(body: unknown): PrepInput {
         stage: str(o.stage, `环节 ${i + 1}`, 40),
         duration: Math.min(45, Math.max(1, Math.round(Number(o.duration) || 5))),
         intent: str(o.intent, "", 300),
-        content: str(o.content, "", 900),
+        content: str(o.content, "", 1200),
       };
     })
     .filter((f) => f.content);
@@ -92,6 +106,61 @@ export function sanitizePrepInput(body: unknown): PrepInput {
   };
 }
 
+function cleanLine(s: string): string {
+  return s
+    .replace(/\*\*/g, "")
+    .replace(/^[#\-\s·•]+/, "")
+    .replace(/`/g, "")
+    .replace(/\\[()[\]]/g, "")
+    .replace(/\$/g, "")
+    .trim();
+}
+
+/** 消毒 LLM 输出的课件结构 */
+export function sanitizeDeck(body: unknown): DeckSpec | null {
+  const b = (body ?? {}) as Record<string, unknown>;
+  const deckTitle = String(b.deckTitle ?? "").slice(0, 40).trim();
+  if (!deckTitle) return null;
+  const slides: DeckSlide[] = (Array.isArray(b.slides) ? b.slides : [])
+    .slice(0, 18)
+    .map((s) => {
+      const o = (s ?? {}) as Record<string, unknown>;
+      const blocks: DeckBlock[] = (Array.isArray(o.blocks) ? o.blocks : [])
+        .slice(0, 3)
+        .map((bl) => {
+          const x = (bl ?? {}) as Record<string, unknown>;
+          return {
+            title: String(x.title ?? "").slice(0, 8).trim(),
+            lines: (Array.isArray(x.lines) ? x.lines : [])
+              .map((l) => cleanLine(String(l)).slice(0, 36))
+              .filter(Boolean)
+              .slice(0, 5),
+            highlight: Boolean(x.highlight),
+          };
+        })
+        .filter((bl) => bl.lines.length);
+      return {
+        header: String(o.header ?? "").slice(0, 24).trim(),
+        kicker: String(o.kicker ?? "").slice(0, 10).trim(),
+        blocks,
+        tip: String(o.tip ?? "").slice(0, 30).trim(),
+      };
+    })
+    .filter((s) => s.header && s.blocks.length);
+  if (!slides.length) return null;
+  const pal = (b.palette ?? {}) as Record<string, unknown>;
+  return {
+    deckTitle,
+    subtitle: String(b.subtitle ?? "").slice(0, 24).trim(),
+    palette: {
+      primary: typeof pal.primary === "string" ? pal.primary : undefined,
+      accent: typeof pal.accent === "string" ? pal.accent : undefined,
+      light: typeof pal.light === "string" ? pal.light : undefined,
+    },
+    slides,
+  };
+}
+
 export function resolvePalette(
   palette: Partial<PrepPptPalette> | null | undefined,
   colorPrimary?: string,
@@ -101,393 +170,247 @@ export function resolvePalette(
     primary: hex(palette?.primary ?? colorPrimary, "16756B"),
     accent: hex(palette?.accent ?? colorAccent, "B97B22"),
     light: hex(palette?.light, "F2EBDD"),
-    text: hex(palette?.text, "2C4155"),
-    subtitle: typeof palette?.subtitle === "string" ? palette.subtitle.slice(0, 60) : undefined,
+    text: "2C4155",
   };
 }
 
-function bulletLines(text: string, max = 6): string[] {
+function linesOf(text: string, max = 6): string[] {
   return text
     .split(/\n+|；|;/)
-    .map((s) => s.replace(/^[-\s]*/, "").trim())
+    .map((s) => cleanLine(s))
     .filter(Boolean)
     .slice(0, max)
-    .map((s) => (s.length > 220 ? `${s.slice(0, 220)}…` : s));
+    .map((s) => (s.length > 120 ? `${s.slice(0, 120)}…` : s));
 }
 
-/** 页脚：品牌 + 页码 */
-function footer(slide: PptxGenJS.Slide, page: number, total: number) {
-  slide.addText("智学慧教 · AI 备课课件", {
-    x: 0.55, y: 7.08, w: 3.2, h: 0.3, fontSize: 8, color: MUTED, fontFace: FONT,
-  });
-  slide.addText(`${page} / ${total}`, {
-    x: 12.2, y: 7.08, w: 0.7, h: 0.3, fontSize: 8, color: MUTED, fontFace: FONT,
-    align: "right",
-  });
-}
-
-function topBar(slide: PptxGenJS.Slide, palette: PrepPptPalette) {
-  slide.addShape("rect", {
-    x: 0, y: 0, w: 13.33, h: 0.12, fill: { color: palette.primary }, line: { color: palette.primary },
-  });
-}
-
-function sectionHeader(
-  slide: PptxGenJS.Slide,
-  palette: PrepPptPalette,
-  kicker: string,
-  title: string,
-  sub?: string
-) {
-  topBar(slide, palette);
-  slide.addText(kicker, {
-    x: 0.55, y: 0.32, w: 12.2, h: 0.3, fontSize: 10, bold: true, color: palette.accent, fontFace: FONT,
-    charSpacing: 2,
-  });
-  slide.addText(title, {
-    x: 0.55, y: 0.62, w: 12.2, h: 0.7, fontSize: 24, bold: true, color: palette.text, fontFace: FONT,
-  });
-  if (sub) {
-    slide.addText(sub, {
-      x: 0.55, y: 1.32, w: 12.2, h: 0.34, fontSize: 11, color: MUTED, fontFace: FONT,
+/** LLM 失败时的兜底课件：教案内容直接成页（同样不放无关信息） */
+export function buildFallbackDeck(prep: PrepInput): DeckSpec {
+  const slides: DeckSlide[] = [];
+  if (prep.targets.length) {
+    slides.push({ header: "学习目标", blocks: [{ lines: prep.targets.slice(0, 6) }] });
+  }
+  if (prep.keyPoints.length || prep.difficulties.length) {
+    slides.push({
+      header: "重点与难点",
+      blocks: [
+        { title: "重点", lines: prep.keyPoints.slice(0, 4) },
+        { title: "难点", lines: prep.difficulties.slice(0, 4) },
+      ],
     });
   }
-  slide.addShape("line", {
-    x: 0.55, y: 1.28, w: 12.23, h: 0, line: { color: "E1DBCF", width: 0.75 },
+  for (const f of prep.flow) {
+    slides.push({
+      header: f.stage,
+      blocks: [{ lines: linesOf(f.content, 6) }],
+      notes: `设计意图：${f.intent}\n\n${f.content}`,
+    });
+  }
+  if (prep.homework || prep.preview) {
+    slides.push({
+      header: "作业与预习",
+      blocks: [
+        { title: "课后作业", lines: linesOf(prep.homework, 5) },
+        { title: "预习任务", lines: linesOf(prep.preview, 5) },
+      ],
+    });
+  }
+  return { deckTitle: prep.title, slides };
+}
+
+/* ---------------- 渲染 ---------------- */
+
+function headerOf(
+  slide: PptxGenJS.Slide,
+  palette: PrepPptPalette,
+  s: DeckSlide,
+  page: number
+) {
+  slide.addShape("rect", {
+    x: 0, y: 0, w: 13.33, h: 0.1, fill: { color: palette.primary }, line: { color: palette.primary },
   });
+  if (s.kicker) {
+    slide.addText(s.kicker, {
+      x: 0.55, y: 0.3, w: 12.2, h: 0.3, fontSize: 11, bold: true, color: palette.accent,
+      fontFace: FONT, charSpacing: 2,
+    });
+  }
+  slide.addText(s.header, {
+    x: 0.55, y: s.kicker ? 0.58 : 0.42, w: 12.2, h: 0.75, fontSize: 24, bold: true, color: palette.text,
+    fontFace: FONT, valign: "middle", fit: "shrink",
+  });
+  slide.addShape("rect", {
+    x: 0.57, y: s.kicker ? 1.32 : 1.18, w: 1.6, h: 0.05, fill: { color: palette.accent },
+    line: { color: palette.accent },
+  });
+  if (page > 0) {
+    slide.addText(`${page}`, {
+      x: 12.35, y: 7.06, w: 0.6, h: 0.28, fontSize: 9, color: MUTED, fontFace: FONT, align: "right",
+    });
+  }
+}
+
+function blockLines(
+  slide: PptxGenJS.Slide,
+  palette: PrepPptPalette,
+  block: DeckBlock,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  fontSize: number
+) {
+  if (block.title) {
+    slide.addText(block.title, {
+      x, y, w, h: 0.32, fontSize: 13, bold: true, color: palette.accent, fontFace: FONT, valign: "middle",
+    });
+  }
+  const lines = block.lines.slice(0, 5);
+  const titleH = block.title ? 0.36 : 0;
+  const lineH = Math.min(0.62, (h - titleH) / Math.max(1, lines.length));
+  lines.forEach((line, i) => {
+    slide.addText(
+      [
+        { text: "▍", options: { color: palette.accent, bold: true, fontSize: Math.max(11, fontSize - 3) } },
+        { text: ` ${line}`, options: { color: palette.text, fontSize } },
+      ],
+      {
+        x, y: y + titleH + i * lineH, w, h: lineH, fontFace: FONT, valign: "middle",
+        breakLine: false, fit: "shrink",
+      }
+    );
+  });
+}
+
+function contentSlide(
+  pptx: PptxGenJS,
+  palette: PrepPptPalette,
+  s: DeckSlide,
+  page: number
+) {
+  const slide = pptx.addSlide();
+  slide.background = { color: WHITE };
+  headerOf(slide, palette, s, page);
+
+  const main = s.blocks.filter((b) => !b.highlight);
+  const answers = s.blocks.filter((b) => b.highlight);
+  const contentTop = s.kicker ? 1.55 : 1.42;
+  const answerH = answers.length ? 1.15 : 0;
+  const contentH = 5.45 - contentTop - (s.tip ? 0.42 : 0) - (answerH > 0 ? answerH + 0.15 : 0);
+
+  if (main.length === 2) {
+    blockLines(slide, palette, main[0], 0.55, contentTop, 6.0, contentH, 17);
+    blockLines(slide, palette, main[1], 6.85, contentTop, 6.0, contentH, 17);
+  } else if (main.length === 3) {
+    const w = 3.95;
+    main.forEach((b, i) => blockLines(slide, palette, b, 0.55 + i * 4.1, contentTop, w, contentH, 15));
+  } else if (main.length === 1) {
+    blockLines(slide, palette, main[0], 0.55, contentTop, 12.2, contentH, 20);
+  }
+
+  // 答案/结果面板
+  answers.forEach((a, i) => {
+    const x = answers.length === 2 ? 0.55 + i * 6.15 : 0.55;
+    const w = answers.length === 2 ? 6.0 : 12.23;
+    const y = 5.62;
+    slide.addShape("roundRect", {
+      x, y, w, h: answerH, fill: { color: palette.light }, line: { color: palette.accent, width: 1 },
+      rectRadius: 0.08,
+    });
+    const label = a.title || "答案";
+    slide.addText(label, {
+      x: x + 0.25, y: y + 0.08, w: 1.4, h: 0.3, fontSize: 12, bold: true, color: palette.accent, fontFace: FONT,
+    });
+    slide.addText(a.lines.slice(0, 3).join("    "), {
+      x: x + 1.65, y: y + 0.08, w: w - 1.9, h: answerH - 0.16, fontSize: 16, color: palette.text, fontFace: FONT,
+      valign: "middle", fit: "shrink",
+    });
+  });
+
+  if (s.tip) {
+    slide.addText(`注意 · ${s.tip}`, {
+      x: 0.55, y: 6.85, w: 12.2, h: 0.3, fontSize: 12, italic: true, bold: true, color: WARN, fontFace: FONT,
+      fit: "shrink",
+    });
+  }
+  if (s.notes) slide.addNotes(s.notes);
 }
 
 function titleSlide(
   pptx: PptxGenJS,
-  prep: PrepInput,
-  opts: PrepPptOptions,
   palette: PrepPptPalette,
-  page: number,
-  total: number
+  deck: DeckSpec,
+  opts: PrepPptOptions,
+  page: number
 ) {
   const slide = pptx.addSlide();
   slide.background = { color: palette.light };
-  topBar(slide, palette);
-  slide.addText("AI 备课 · 课堂课件", {
-    x: 0.55, y: 0.45, w: 12.2, h: 0.3, fontSize: 11, bold: true, color: palette.accent, fontFace: FONT,
-    charSpacing: 2,
+  slide.addShape("rect", {
+    x: 0, y: 0, w: 13.33, h: 0.14, fill: { color: palette.primary }, line: { color: palette.primary },
   });
-  slide.addText(prep.title, {
-    x: 0.55, y: 0.95, w: 12.2, h: 1.6, fontSize: 30, bold: true, color: palette.text, fontFace: FONT,
-    valign: "top", fit: "shrink",
-  });
-  if (palette.subtitle) {
-    slide.addText(palette.subtitle, {
-      x: 0.55, y: 2.55, w: 12.2, h: 0.5, fontSize: 14, color: MUTED, fontFace: FONT, fit: "shrink",
+  if (opts.subjectName) {
+    slide.addText(opts.subjectName, {
+      x: 0.55, y: 0.55, w: 12.2, h: 0.35, fontSize: 12, bold: true, color: palette.accent,
+      fontFace: FONT, charSpacing: 2,
     });
   }
-  const mins = opts.durationMinutes ?? prep.flow.reduce((a, f) => a + f.duration, 0);
-  const meta = [
-    opts.subjectName ? `学科：${opts.subjectName}` : "",
-    opts.className ? `班级：${opts.className}` : "",
-    mins ? `时长：${mins} 分钟` : "",
-  ]
-    .filter(Boolean)
-    .join("   ·   ");
-  slide.addText(meta, {
-    x: 0.55, y: 3.2, w: 12.2, h: 0.4, fontSize: 12, color: palette.text, fontFace: FONT,
+  slide.addText(deck.deckTitle, {
+    x: 0.55, y: 1.15, w: 12.2, h: 1.9, fontSize: 32, bold: true, color: palette.text, fontFace: FONT,
+    valign: "top", fit: "shrink",
   });
-  slide.addText(`由教案一键生成 · ${new Date().toISOString().slice(0, 10)}`, {
-    x: 0.55, y: 3.6, w: 12.2, h: 0.4, fontSize: 10, color: MUTED, fontFace: FONT,
-  });
-  if (opts.stylePrompt) {
-    slide.addText(`风格提示：${opts.stylePrompt}`, {
-      x: 0.55, y: 4.1, w: 12.2, h: 0.4, fontSize: 10, color: MUTED, fontFace: FONT, fit: "shrink",
+  if (deck.subtitle) {
+    slide.addText(deck.subtitle, {
+      x: 0.55, y: 3.1, w: 12.2, h: 0.5, fontSize: 15, color: "5A6B7B", fontFace: FONT, fit: "shrink",
     });
   }
   slide.addShape("rect", {
-    x: 0.55, y: 6.35, w: 12.23, h: 0.02, fill: { color: palette.primary }, line: { color: palette.primary },
+    x: 0.57, y: 6.2, w: 1.8, h: 0.06, fill: { color: palette.accent }, line: { color: palette.accent },
   });
-  slide.addText("教师审核后使用 · AI 不作教学决策", {
-    x: 0.55, y: 6.45, w: 12.2, h: 0.4, fontSize: 9, color: MUTED, fontFace: FONT, align: "center",
+  slide.addText(`${page}`, {
+    x: 12.35, y: 7.06, w: 0.6, h: 0.28, fontSize: 9, color: MUTED, fontFace: FONT, align: "right",
   });
-  footer(slide, page, total);
-}
-
-function agendaSlide(
-  pptx: PptxGenJS,
-  prep: PrepInput,
-  opts: PrepPptOptions,
-  palette: PrepPptPalette,
-  page: number,
-  total: number
-) {
-  const slide = pptx.addSlide();
-  slide.background = { color: CREAM };
-  const mins = opts.durationMinutes ?? prep.flow.reduce((a, f) => a + f.duration, 0);
-  sectionHeader(slide, palette, "AGENDA", "课堂节奏", `${prep.title} · 共 ${mins} 分钟`);
-  const y0 = 1.75;
-  const n = Math.max(1, prep.flow.length);
-  const step = Math.min(0.62, (6.95 - y0) / Math.max(1, n - 1));
-  prep.flow.forEach((f, i) => {
-    const y = y0 + i * step;
-    slide.addShape("rect", {
-      x: 0.55, y, w: 12.23, h: Math.max(0.38, step - 0.1), fill: { color: i % 2 ? "FFFFFF" : palette.light },
-      line: { color: "E1DBCF", width: 0.5 },
-    });
-    slide.addText(String(i + 1).padStart(2, "0"), {
-      x: 0.72, y: y + 0.03, w: 0.55, h: Math.max(0.3, step - 0.16), fontSize: 12, bold: true, color: palette.accent, fontFace: FONT,
-      valign: "middle",
-    });
-    slide.addText(f.stage, {
-      x: 1.45, y: y + 0.03, w: 8.1, h: Math.max(0.3, step - 0.16), fontSize: 12, bold: true, color: palette.text, fontFace: FONT,
-      valign: "middle", fit: "shrink",
-    });
-    slide.addText(`${f.duration} 分钟`, {
-      x: 9.8, y: y + 0.03, w: 2.8, h: Math.max(0.3, step - 0.16), fontSize: 10.5, color: MUTED, fontFace: FONT, align: "right",
-      valign: "middle",
-    });
-  });
-  footer(slide, page, total);
-}
-
-function bulletsSlide(
-  pptx: PptxGenJS,
-  prep: PrepInput,
-  palette: PrepPptPalette,
-  kicker: string,
-  title: string,
-  items: string[],
-  page: number,
-  total: number
-) {
-  const slide = pptx.addSlide();
-  slide.background = { color: CREAM };
-  sectionHeader(slide, palette, kicker, title);
-  const shown = items.slice(0, 8);
-  shown.forEach((item, i) => {
-    const y = 1.75 + i * 0.62;
-    slide.addShape("ellipse", {
-      x: 0.7, y: y + 0.13, w: 0.14, h: 0.14, fill: { color: palette.accent }, line: { color: palette.accent },
-    });
-    slide.addText(`${i + 1}. ${item}`, {
-      x: 1.0, y, w: 11.7, h: 0.52, fontSize: 13, color: palette.text, fontFace: FONT, valign: "middle",
-      fit: "shrink",
-    });
-  });
-  footer(slide, page, total);
-}
-
-function keyDifficultySlide(
-  pptx: PptxGenJS,
-  prep: PrepInput,
-  palette: PrepPptPalette,
-  page: number,
-  total: number
-) {
-  const slide = pptx.addSlide();
-  slide.background = { color: CREAM };
-  sectionHeader(slide, palette, "FOCUS", "重点与难点");
-  const col = (x: number, title: string, items: string[], color: string, bg: string) => {
-    slide.addShape("roundRect", {
-      x, y: 1.7, w: 5.9, h: 4.9, fill: { color: bg }, line: { color: "E1DBCF", width: 0.75 },
-      rectRadius: 0.06,
-    });
-    slide.addText(title, {
-      x: x + 0.25, y: 1.9, w: 5.4, h: 0.4, fontSize: 14, bold: true, color, fontFace: FONT,
-    });
-    items.slice(0, 6).forEach((item, i) => {
-      slide.addText(`• ${item}`, {
-        x: x + 0.25, y: 2.45 + i * 0.68, w: 5.4, h: 0.6, fontSize: 12, color: palette.text,
-        fontFace: FONT, fit: "shrink",
-      });
-    });
-  };
-  col(0.55, "教学重点", prep.keyPoints, palette.primary, palette.light);
-  col(6.9, "教学难点", prep.difficulties, "B2503A", "F9EEDB");
-  footer(slide, page, total);
-}
-
-function flowSlide(
-  pptx: PptxGenJS,
-  prep: PrepInput,
-  palette: PrepPptPalette,
-  stage: PrepFlowStage,
-  index: number,
-  page: number,
-  total: number
-) {
-  const slide = pptx.addSlide();
-  slide.background = { color: CREAM };
-  sectionHeader(
-    slide,
-    palette,
-    `教学环节 ${index + 1}`,
-    stage.stage,
-    `设计意图：${stage.intent || "—"}`
-  );
-  const lines = bulletLines(stage.content, 7);
-  lines.forEach((line, i) => {
-    const y = 1.9 + i * 0.72;
-    slide.addShape("roundRect", {
-      x: 0.55, y, w: 12.23, h: 0.62, fill: { color: i % 2 ? "FFFFFF" : palette.light },
-      line: { color: "E1DBCF", width: 0.5 }, rectRadius: 0.08,
-    });
-    slide.addText(line, {
-      x: 0.8, y: y + 0.05, w: 11.7, h: 0.52, fontSize: 12.5, color: palette.text, fontFace: FONT,
-      valign: "middle", fit: "shrink",
-    });
-  });
-  slide.addText(`本环节 ${stage.duration} 分钟`, {
-    x: 0.55, y: 6.6, w: 12.2, h: 0.35, fontSize: 10, bold: true, color: palette.accent, fontFace: FONT,
-    align: "right",
-  });
-  slide.addNotes(`设计意图：${stage.intent}\n\n${stage.content}`);
-  footer(slide, page, total);
-}
-
-function pedagogySlide(
-  pptx: PptxGenJS,
-  prep: PrepInput,
-  palette: PrepPptPalette,
-  page: number,
-  total: number
-) {
-  const slide = pptx.addSlide();
-  slide.background = { color: CREAM };
-  sectionHeader(slide, palette, "PEDAGOGY", "教学方法依据");
-  prep.pedagogy.slice(0, 8).forEach((p, i) => {
-    const y = 1.75 + i * 0.6;
-    slide.addShape("roundRect", {
-      x: 0.55, y, w: 12.23, h: 0.52, fill: { color: i % 2 ? "FFFFFF" : palette.light },
-      line: { color: "E1DBCF", width: 0.5 }, rectRadius: 0.08,
-    });
-    slide.addText(p.theory, {
-      x: 0.75, y: y + 0.05, w: 3.4, h: 0.42, fontSize: 12, bold: true, color: palette.primary,
-      fontFace: FONT, valign: "middle", fit: "shrink",
-    });
-    slide.addText(p.application, {
-      x: 4.3, y: y + 0.05, w: 8.3, h: 0.42, fontSize: 11.5, color: palette.text, fontFace: FONT,
-      valign: "middle", fit: "shrink",
-    });
-  });
-  footer(slide, page, total);
-}
-
-function textSlide(
-  pptx: PptxGenJS,
-  palette: PrepPptPalette,
-  kicker: string,
-  title: string,
-  text: string,
-  page: number,
-  total: number
-) {
-  const slide = pptx.addSlide();
-  slide.background = { color: CREAM };
-  sectionHeader(slide, palette, kicker, title);
-  slide.addShape("roundRect", {
-    x: 0.55, y: 1.75, w: 12.23, h: 4.7, fill: { color: "FFFFFF" },
-    line: { color: "E1DBCF", width: 0.75 }, rectRadius: 0.04,
-  });
-  slide.addText(text || "—", {
-    x: 0.85, y: 1.95, w: 11.6, h: 4.3, fontSize: 12.5, color: palette.text, fontFace: FONT,
-    valign: "top", fit: "shrink",
-  });
-  footer(slide, page, total);
-}
-
-function homeworkPreviewSlide(
-  pptx: PptxGenJS,
-  prep: PrepInput,
-  palette: PrepPptPalette,
-  page: number,
-  total: number
-) {
-  const slide = pptx.addSlide();
-  slide.background = { color: CREAM };
-  sectionHeader(slide, palette, "HOMEWORK", "作业与预习");
-  const col = (x: number, title: string, text: string, bg: string, color: string) => {
-    slide.addShape("roundRect", {
-      x, y: 1.7, w: 5.9, h: 4.9, fill: { color: bg }, line: { color: "E1DBCF", width: 0.75 },
-      rectRadius: 0.06,
-    });
-    slide.addText(title, {
-      x: x + 0.25, y: 1.9, w: 5.4, h: 0.4, fontSize: 14, bold: true, color, fontFace: FONT,
-    });
-    slide.addText(text || "—", {
-      x: x + 0.25, y: 2.45, w: 5.4, h: 4.0, fontSize: 11.5, color: palette.text, fontFace: FONT,
-      valign: "top", fit: "shrink",
-    });
-  };
-  col(0.55, "课后作业（分层）", prep.homework, palette.light, palette.primary);
-  col(6.9, "预习任务", prep.preview, "E7F1EE", "16756B");
-  footer(slide, page, total);
 }
 
 function closingSlide(
   pptx: PptxGenJS,
-  prep: PrepInput,
   palette: PrepPptPalette,
-  page: number,
-  total: number
+  deck: DeckSpec,
+  page: number
 ) {
   const slide = pptx.addSlide();
   slide.background = { color: palette.light };
-  topBar(slide, palette);
+  slide.addShape("rect", {
+    x: 0, y: 0, w: 13.33, h: 0.14, fill: { color: palette.primary }, line: { color: palette.primary },
+  });
   slide.addText("谢谢", {
     x: 0.55, y: 2.2, w: 12.2, h: 1.2, fontSize: 40, bold: true, color: palette.text, fontFace: FONT,
     align: "center",
   });
-  slide.addText(prep.title, {
+  slide.addText(deck.deckTitle, {
     x: 0.55, y: 3.6, w: 12.2, h: 0.6, fontSize: 16, color: palette.primary, fontFace: FONT,
     align: "center", fit: "shrink",
   });
-  slide.addText("教学目标 · 教学过程 · 板书 · 作业与预习均整理在前页", {
-    x: 0.55, y: 4.4, w: 12.2, h: 0.5, fontSize: 11, color: MUTED, fontFace: FONT, align: "center",
+  slide.addText(`${page}`, {
+    x: 12.35, y: 7.06, w: 0.6, h: 0.28, fontSize: 9, color: MUTED, fontFace: FONT, align: "right",
   });
-  slide.addText("智学慧教 · AI 备课助手", {
-    x: 0.55, y: 6.2, w: 12.2, h: 0.4, fontSize: 10, color: MUTED, fontFace: FONT, align: "center",
-  });
-  footer(slide, page, total);
 }
 
-/** 生成 PPTX（返回 Uint8Array）。所有内容来自已消毒的 prep。 */
-export async function buildPrepPptx(
-  prep: PrepInput,
+/** 渲染课件并返回 Uint8Array */
+export async function buildDeckPptx(
+  deck: DeckSpec,
   opts: PrepPptOptions = {}
 ): Promise<Uint8Array> {
-  const palette = resolvePalette(opts.palette, opts.colorPrimary, opts.colorAccent);
+  const palette = resolvePalette(deck.palette, opts.colorPrimary, opts.colorAccent);
   const pptx = new PptxGenJS();
   pptx.layout = "LAYOUT_WIDE";
   pptx.author = "智学慧教";
-  pptx.title = prep.title;
-  pptx.subject = "AI 备课课件";
+  pptx.title = deck.deckTitle;
+  pptx.subject = "课堂课件";
 
-  const hasAgenda = prep.flow.length > 0;
-  const hasTargets = prep.targets.length > 0;
-  const hasKey = prep.keyPoints.length > 0 || prep.difficulties.length > 0;
-  const hasPedagogy = prep.pedagogy.length > 0;
-  const hasBoard = Boolean(prep.boardDesign);
-  const hasHomework = Boolean(prep.homework) || Boolean(prep.preview);
-  const total =
-    1 +
-    (hasAgenda ? 1 : 0) +
-    (hasTargets ? 1 : 0) +
-    (hasKey ? 1 : 0) +
-    prep.flow.length +
-    (hasPedagogy ? 1 : 0) +
-    (hasBoard ? 1 : 0) +
-    (hasHomework ? 1 : 0) +
-    1;
-
-  let page = 0;
-  const next = () => ++page;
-
-  titleSlide(pptx, prep, opts, palette, next(), total);
-  if (hasAgenda) agendaSlide(pptx, prep, opts, palette, next(), total);
-  if (hasTargets) bulletsSlide(pptx, prep, palette, "OBJECTIVES", "教学目标", prep.targets, next(), total);
-  if (hasKey) keyDifficultySlide(pptx, prep, palette, next(), total);
-  prep.flow.forEach((f, i) => flowSlide(pptx, prep, palette, f, i, next(), total));
-  if (hasPedagogy) pedagogySlide(pptx, prep, palette, next(), total);
-  if (hasBoard) textSlide(pptx, palette, "BOARD", "板书设计", prep.boardDesign, next(), total);
-  if (hasHomework) homeworkPreviewSlide(pptx, prep, palette, next(), total);
-  closingSlide(pptx, prep, palette, next(), total);
+  let page = 1;
+  titleSlide(pptx, palette, deck, opts, page);
+  page++;
+  deck.slides.forEach((s) => contentSlide(pptx, palette, s, page++));
+  closingSlide(pptx, palette, deck, page);
 
   const data = await pptx.write({ outputType: "nodebuffer" });
   const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer);

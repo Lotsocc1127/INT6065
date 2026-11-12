@@ -120,7 +120,6 @@ export default function PrepPage() {
   const [pptStyle, setPptStyle] = useState("");
   const [pptPrimary, setPptPrimary] = useState("#16756B");
   const [pptAccent, setPptAccent] = useState("#B97B22");
-  const [pptDuration, setPptDuration] = useState(40);
   const [pptLoading, setPptLoading] = useState(false);
 
   useEffect(() => {
@@ -168,8 +167,6 @@ export default function PrepPage() {
       const j = await r.json();
       if (!r.ok) throw new Error(j.error ?? "生成失败");
       setResult(j.prep as PrepResult);
-      const sum = (j.prep as PrepResult).flow.reduce((a, f) => a + (Number(f.duration) || 0), 0);
-      if (sum > 0) setPptDuration(Math.min(600, Math.max(1, sum)));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "生成失败");
     } finally {
@@ -210,7 +207,6 @@ export default function PrepPage() {
           stylePrompt: pptStyle.trim(),
           colorPrimary: pptPrimary,
           colorAccent: pptAccent,
-          durationMinutes: pptDuration,
           subjectName,
           className,
         }),
@@ -357,13 +353,13 @@ export default function PrepPage() {
               </div>
               <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto]">
                 <div className="space-y-1">
-                  <Label htmlFor="ppt-style">风格提示词（可选）</Label>
+                  <Label htmlFor="ppt-style">风格提示词（可选，影响配色）</Label>
                   <Textarea
                     id="ppt-style"
                     rows={1}
                     value={pptStyle}
                     onChange={(e) => setPptStyle(e.target.value)}
-                    placeholder="如：清新简洁、浅蓝主调、字大行疏、节奏紧凑……"
+                    placeholder="如：清新简洁、浅蓝主调、字大行疏……"
                   />
                 </div>
                 <div className="space-y-1">
@@ -385,19 +381,6 @@ export default function PrepPage() {
                     />
                   </div>
                 </div>
-                <div className="space-y-1">
-                  <Label htmlFor="ppt-duration">课堂时长（分钟）</Label>
-                  <Input
-                    id="ppt-duration"
-                    type="number"
-                    min={5}
-                    max={600}
-                    value={pptDuration}
-                    onChange={(e) =>
-                      setPptDuration(Math.min(600, Math.max(1, Number(e.target.value) || 1)))
-                    }
-                  />
-                </div>
                 <div className="self-end">
                   <Button onClick={generatePpt} disabled={pptLoading} className="gap-1.5">
                     {pptLoading ? (
@@ -410,7 +393,7 @@ export default function PrepPage() {
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">
-                提示词会交给 AI 配色并生成一句副标题；也可以只填颜色、只填时长，或全部留空使用默认样式。
+                AI 会把教案真正展开成课堂页面（例题、步骤、答案、分层练习），提示词只影响配色；全部留空则使用默认样式。
               </p>
             </div>
             <div className="space-y-2">
