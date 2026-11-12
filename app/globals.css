@@ -113,3 +113,25 @@ html[data-app-theme="eye-beige"] {
     --chart-seq700: #cde2fb;
   }
 }
+
+/* ---- 苏格拉底对话富文本：KaTeX 与加粗 ---- */
+.socrates-rich .katex {
+  font-size: 1.02em;
+}
+.socrates-rich .katex-inline {
+  white-space: normal;
+}
+.socrates-rich .katex-block {
+  max-width: 100%;
+  margin: 0.35rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: normal;
+}
+.socrates-rich .katex-display {
+  margin: 0;
+  white-space: normal;
+}
+.socrates-rich strong {
+  font-weight: 600;
+}

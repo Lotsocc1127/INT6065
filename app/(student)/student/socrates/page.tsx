@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { SubjectSwitcher, type SubjectInfo } from "@/components/app/subject-switcher";
+import { RichMessage } from "@/components/app/rich-message";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +42,8 @@ function SocratesChat() {
   const [loading, setLoading] = useState(false);
   const [llmReady, setLlmReady] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const composingRef = useRef(false);
+  const compositionEndAtRef = useRef(0);
 
   useEffect(() => {
     fetch("/api/subjects")
@@ -136,13 +139,13 @@ function SocratesChat() {
           <div key={i} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
             <div
               className={cn(
-                "max-w-[80%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm leading-relaxed",
+                "socrates-rich max-w-[80%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm leading-relaxed",
                 m.role === "user"
                   ? "bg-primary text-primary-foreground"
                   : "bg-muted"
               )}
             >
-              {m.content}
+              <RichMessage content={m.content} />
             </div>
           </div>
         ))}
@@ -172,8 +175,25 @@ function SocratesChat() {
           <Textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onCompositionStart={() => {
+              composingRef.current = true;
+            }}
+            onCompositionEnd={() => {
+              composingRef.current = false;
+              compositionEndAtRef.current = Date.now();
+            }}
             onKeyDown={(e) => {
+              // 中文输入法候选词/英文组合期间，Enter 是“确认候选”，不能当发送。
+              // 某些浏览器会在 compositionend 之后才派发 keydown，因此再加一个短保护窗。
+              if (
+                e.nativeEvent.isComposing ||
+                composingRef.current ||
+                e.keyCode === 229
+              ) {
+                return;
+              }
               if (e.key === "Enter" && !e.shiftKey) {
+                if (Date.now() - compositionEndAtRef.current < 80) return;
                 e.preventDefault();
                 send();
               }
