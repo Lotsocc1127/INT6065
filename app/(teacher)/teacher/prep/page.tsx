@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Copy, Loader2, Plus, Sparkles, Trash2 } from "lucide-react";
+import { Copy, Loader2, Plus, Presentation, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -117,6 +117,11 @@ export default function PrepPage() {
   const [requirement, setRequirement] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<PrepResult | null>(null);
+  const [pptStyle, setPptStyle] = useState("");
+  const [pptPrimary, setPptPrimary] = useState("#16756B");
+  const [pptAccent, setPptAccent] = useState("#B97B22");
+  const [pptDuration, setPptDuration] = useState(40);
+  const [pptLoading, setPptLoading] = useState(false);
 
   useEffect(() => {
     fetch("/api/subjects")
@@ -163,6 +168,8 @@ export default function PrepPage() {
       const j = await r.json();
       if (!r.ok) throw new Error(j.error ?? "生成失败");
       setResult(j.prep as PrepResult);
+      const sum = (j.prep as PrepResult).flow.reduce((a, f) => a + (Number(f.duration) || 0), 0);
+      if (sum > 0) setPptDuration(Math.min(600, Math.max(1, sum)));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "生成失败");
     } finally {
@@ -187,6 +194,45 @@ export default function PrepPage() {
       toast.success("教案已复制到剪贴板");
     } catch {
       toast.error("复制失败，请手动选择复制");
+    }
+  }
+
+  async function generatePpt() {
+    if (!result) return;
+    setPptLoading(true);
+    try {
+      const className = classes.find((c) => c.id === classId)?.name;
+      const r = await fetch("/api/ai/prep/ppt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prep: result,
+          stylePrompt: pptStyle.trim(),
+          colorPrimary: pptPrimary,
+          colorAccent: pptAccent,
+          durationMinutes: pptDuration,
+          subjectName,
+          className,
+        }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error((j as { error?: string }).error ?? "PPT 生成失败");
+      }
+      const blob = await r.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = `${(result.title || "教案").replace(/[\\/:*?"<>|]/g, "")}课件.pptx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      toast.success("PPT 已生成，开始下载");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "PPT 生成失败");
+    } finally {
+      setPptLoading(false);
     }
   }
 
@@ -301,6 +347,72 @@ export default function PrepPage() {
             </Button>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="space-y-3 rounded-lg border border-dashed p-3">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Presentation className="h-4 w-4 text-primary" />
+                一键生成 PPT 课件
+                <span className="text-xs font-normal text-muted-foreground">
+                  基于下方当前教案内容生成 .pptx，下载后可在 PowerPoint/WPS 继续编辑
+                </span>
+              </div>
+              <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto]">
+                <div className="space-y-1">
+                  <Label htmlFor="ppt-style">风格提示词（可选）</Label>
+                  <Textarea
+                    id="ppt-style"
+                    rows={1}
+                    value={pptStyle}
+                    onChange={(e) => setPptStyle(e.target.value)}
+                    placeholder="如：清新简洁、浅蓝主调、字大行疏、节奏紧凑……"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>主色 / 强调色（可选）</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      type="color"
+                      aria-label="PPT 主色"
+                      value={pptPrimary}
+                      onChange={(e) => setPptPrimary(e.target.value)}
+                      className="h-9 w-14 cursor-pointer p-1"
+                    />
+                    <Input
+                      type="color"
+                      aria-label="PPT 强调色"
+                      value={pptAccent}
+                      onChange={(e) => setPptAccent(e.target.value)}
+                      className="h-9 w-14 cursor-pointer p-1"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="ppt-duration">课堂时长（分钟）</Label>
+                  <Input
+                    id="ppt-duration"
+                    type="number"
+                    min={5}
+                    max={600}
+                    value={pptDuration}
+                    onChange={(e) =>
+                      setPptDuration(Math.min(600, Math.max(1, Number(e.target.value) || 1)))
+                    }
+                  />
+                </div>
+                <div className="self-end">
+                  <Button onClick={generatePpt} disabled={pptLoading} className="gap-1.5">
+                    {pptLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Presentation className="h-4 w-4" />
+                    )}
+                    {pptLoading ? "生成中…" : "生成 PPT"}
+                  </Button>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                提示词会交给 AI 配色并生成一句副标题；也可以只填颜色、只填时长，或全部留空使用默认样式。
+              </p>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="prep-title">教案标题</Label>
               <Input

@@ -146,6 +146,16 @@ export function socratesSystem(context?: string, subjectName?: string): string {
 ${context ? `\n当前辅导上下文：\n${context}` : ""}`;
 }
 
+/** 教案 → PPT 课件：风格与配色（7.7 附加） */
+export const PREP_PPT_SYSTEM = `你是演示课件设计助手。根据用户的风格提示和可选颜色，为一份初中教案课件决定配色与一句话副标题。
+只输出 JSON：
+{ "palette": { "primary": "#RRGGBB", "accent": "#RRGGBB", "light": "#RRGGBB", "text": "#RRGGBB" }, "subtitle": "一句话中文副标题（≤20字）" }
+规则：
+- primary 用于标题与顶栏（深色）；accent 用于序号与强调；light 用于浅色底（接近白/浅色）；text 为正文深色。
+- 颜色需符合风格提示（如：清新、学术、活泼、暖色、深色主题）；对比度足够；全部用 6 位 HEX。
+- 若用户给出主色/强调色，以它们为基础微调；若没有，按风格自行选择。
+- subtitle 用中文概括本课主题，不超过 20 字。
+- 不要输出 JSON 以外的任何文字。`;
 /** 7.7 AI 备课助手（教师端） */
 export const PREP_SYSTEM = `你是资深初中教研员兼 AI 备课助手。基于提供的班级真实学情数据，设计一份可落地执行的教案。
 要求：

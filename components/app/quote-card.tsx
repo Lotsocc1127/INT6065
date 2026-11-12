@@ -17,10 +17,24 @@ const QUOTES: { text: string; author: string }[] = [
   { text: "每个孩子都是一颗种子，只是花期不同。", author: "佚名" },
 ];
 
+/** 香港日期 → 数字（2026-11-12 → 20261112），用于按天轮换 */
+function hkDayKey(): number {
+  try {
+    const ymd = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Hong_Kong",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+    return Number(ymd.replace(/\D/g, ""));
+  } catch {
+    return Math.floor(Date.now() / 86_400_000);
+  }
+}
+
 export function QuoteCard({ className }: { className?: string }) {
-  // 按天轮换（同一天内保持一致）
-  const dayIndex = Math.floor(Date.now() / 86_400_000);
-  const q = QUOTES[dayIndex % QUOTES.length];
+  // 按香港日期每天轮换（本地午夜更新，同一天内保持一致）
+  const q = QUOTES[hkDayKey() % QUOTES.length];
   return (
     <div
       className={cn(

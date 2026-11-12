@@ -28,6 +28,7 @@ export type LlmTask =
   | "similar"
   | "socrates"
   | "prep"
+  | "prep-ppt"
   | "analysis"
   | "report"
   | "lecture"
