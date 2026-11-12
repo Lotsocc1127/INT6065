@@ -148,6 +148,12 @@ export function sanitizeDeck(body: unknown): DeckSpec | null {
     })
     .filter((s) => s.header && s.blocks.length);
   if (!slides.length) return null;
+  // 学习目标页固定放在内容页第一张（LLM 偶尔会把热身页排到前面）
+  const objIdx = slides.findIndex((s) => /学习目标|教学目标/.test(s.header));
+  if (objIdx > 0) {
+    const [obj] = slides.splice(objIdx, 1);
+    slides.unshift(obj);
+  }
   const pal = (b.palette ?? {}) as Record<string, unknown>;
   return {
     deckTitle,
